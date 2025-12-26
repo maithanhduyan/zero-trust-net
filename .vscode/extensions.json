@@ -5,6 +5,7 @@
         "ms-azuretools.vscode-containers",
         "ms-vscode-remote.remote-containers",
         "shd101wyy.markdown-preview-enhanced",
+        "qwtel.sqlite-viewer",
         "tomoki1207.pdf"
     ]
 }

@@ -1,0 +1,27 @@
+node_modules
+__pycache__
+.env
+env
+venv
+.venv
+*.pyc
+*.pyo
+*.pyd
+*.pyds
+*.swp
+*.swo
+.DS_Store
+.idea
+.vscode
+*.egg-info
+dist
+build
+.eggs
+*.log
+
+*.db
+*.sqlite3
+*.sqlite
+
+# Ignore while the setup still depends on requirements.txt files
+uv.lock
