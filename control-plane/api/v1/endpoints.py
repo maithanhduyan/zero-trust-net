@@ -7,9 +7,6 @@ from core import node_manager, policy_engine
 import schemas
 from sqlalchemy.orm import Session
 
-# Khởi tạo DB
-session.init_db()
-
 router = APIRouter()
 
 @router.post("/register")
