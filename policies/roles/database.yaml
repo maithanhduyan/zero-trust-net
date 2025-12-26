@@ -1,0 +1,167 @@
+# policies/roles/database.yaml
+# Policies for Database Server nodes (role: db)
+# Defines strict access controls for database servers
+
+metadata:
+  role: db
+  description: "Database server policies (PostgreSQL, Redis, MongoDB)"
+  version: "1.0"
+
+# Security guidelines:
+# 1. Databases should NEVER be directly accessible from outside
+# 2. Only specific app nodes can connect
+# 3. Admin access only from ops nodes
+# 4. Replication only between db nodes
+
+# What database nodes can access (outbound)
+outbound:
+  # Database replication between db nodes
+  - name: db-replication-postgres
+    description: "Allow PostgreSQL replication"
+    dst_role: db
+    protocol: tcp
+    port: 5432
+    action: allow
+    priority: 100
+
+  - name: db-replication-redis
+    description: "Allow Redis replication"
+    dst_role: db
+    protocol: tcp
+    port: 6379
+    action: allow
+    priority: 99
+
+  - name: db-cluster-redis
+    description: "Allow Redis cluster bus"
+    dst_role: db
+    protocol: tcp
+    port: 16379
+    action: allow
+    priority: 98
+
+  # Backup to ops/storage node
+  - name: db-backup
+    description: "Allow backup to ops nodes"
+    dst_role: ops
+    protocol: tcp
+    port: 22
+    action: allow
+    priority: 90
+
+  # Control Plane access
+  - name: db-to-control-plane
+    description: "Allow database to reach Control Plane"
+    dst_role: hub
+    protocol: tcp
+    port: 8000
+    action: allow
+    priority: 80
+
+# What can access database nodes (inbound)
+inbound:
+  # Application server access
+  - name: app-to-postgres
+    description: "Allow apps to connect to PostgreSQL"
+    src_role: app
+    protocol: tcp
+    port: 5432
+    action: allow
+    priority: 100
+
+  - name: app-to-redis
+    description: "Allow apps to connect to Redis"
+    src_role: app
+    protocol: tcp
+    port: 6379
+    action: allow
+    priority: 99
+
+  - name: app-to-mongodb
+    description: "Allow apps to connect to MongoDB"
+    src_role: app
+    protocol: tcp
+    port: 27017
+    action: allow
+    priority: 98
+
+  # Database replication (between db nodes)
+  - name: db-from-replica
+    description: "Allow replication from other db nodes"
+    src_role: db
+    protocol: tcp
+    port: 5432
+    action: allow
+    priority: 95
+
+  # Admin access from ops
+  - name: ops-to-postgres-admin
+    description: "Allow ops to admin PostgreSQL"
+    src_role: ops
+    protocol: tcp
+    port: 5432
+    action: allow
+    priority: 90
+
+  - name: ops-to-redis-admin
+    description: "Allow ops to admin Redis"
+    src_role: ops
+    protocol: tcp
+    port: 6379
+    action: allow
+    priority: 89
+
+  # Metrics collection
+  - name: ops-to-postgres-exporter
+    description: "Allow Prometheus postgres_exporter"
+    src_role: ops
+    protocol: tcp
+    port: 9187
+    action: allow
+    priority: 80
+
+  - name: ops-to-redis-exporter
+    description: "Allow Prometheus redis_exporter"
+    src_role: ops
+    protocol: tcp
+    port: 9121
+    action: allow
+    priority: 79
+
+# Specific database server configurations
+services:
+  primary-postgres:
+    description: "Primary PostgreSQL server"
+    inbound:
+      - name: replica-to-primary
+        description: "Allow replication from replicas"
+        src_role: db
+        protocol: tcp
+        port: 5432
+        action: allow
+        priority: 200
+    settings:
+      max_connections: 200
+      ssl_required: true
+
+  replica-postgres:
+    description: "PostgreSQL read replica"
+    outbound:
+      - name: replica-to-primary
+        description: "Connect to primary for replication"
+        dst_role: db
+        protocol: tcp
+        port: 5432
+        action: allow
+        priority: 200
+
+  redis-master:
+    description: "Redis master node"
+    inbound:
+      - name: redis-sentinel
+        description: "Allow Redis Sentinel monitoring"
+        src_role: db
+        protocol: tcp
+        port: 26379
+        action: allow
+        priority: 200

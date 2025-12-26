@@ -1,0 +1,205 @@
+# policies/roles/ops.yaml
+# Policies for Operations/SRE nodes (role: ops)
+# Ops nodes have broader access for monitoring and management
+
+metadata:
+  role: ops
+  description: "Operations and SRE node policies"
+  version: "1.0"
+
+# Note: Ops nodes are highly privileged
+# Access should be tightly controlled at the user/identity level
+# Only verified ops personnel should have access to ops nodes
+
+# What ops nodes can access (outbound)
+outbound:
+  # SSH access to all nodes
+  - name: ops-ssh-all
+    description: "Allow SSH to all nodes for management"
+    dst_role: "*"
+    protocol: tcp
+    port: 22
+    action: allow
+    priority: 100
+
+  # Prometheus metrics collection
+  - name: ops-prometheus-node
+    description: "Collect node_exporter metrics"
+    dst_role: "*"
+    protocol: tcp
+    port: 9100
+    action: allow
+    priority: 99
+
+  - name: ops-prometheus-postgres
+    description: "Collect postgres_exporter metrics"
+    dst_role: db
+    protocol: tcp
+    port: 9187
+    action: allow
+    priority: 98
+
+  - name: ops-prometheus-redis
+    description: "Collect redis_exporter metrics"
+    dst_role: db
+    protocol: tcp
+    port: 9121
+    action: allow
+    priority: 97
+
+  - name: ops-prometheus-nginx
+    description: "Collect nginx_exporter metrics"
+    dst_role: app
+    protocol: tcp
+    port: 9113
+    action: allow
+    priority: 96
+
+  # Database admin access
+  - name: ops-postgres-admin
+    description: "Admin access to PostgreSQL"
+    dst_role: db
+    protocol: tcp
+    port: 5432
+    action: allow
+    priority: 90
+
+  - name: ops-redis-admin
+    description: "Admin access to Redis"
+    dst_role: db
+    protocol: tcp
+    port: 6379
+    action: allow
+    priority: 89
+
+  - name: ops-mongodb-admin
+    description: "Admin access to MongoDB"
+    dst_role: db
+    protocol: tcp
+    port: 27017
+    action: allow
+    priority: 88
+
+  # Application debugging
+  - name: ops-app-debug
+    description: "Access to app debug endpoints"
+    dst_role: app
+    protocol: tcp
+    port: 8080
+    action: allow
+    priority: 80
+
+  # Log collection (rsyslog/fluentd)
+  - name: ops-collect-logs
+    description: "Collect logs via syslog"
+    dst_role: "*"
+    protocol: tcp
+    port: 514
+    action: allow
+    priority: 70
+
+  # Control Plane API
+  - name: ops-to-control-plane
+    description: "Access Control Plane API"
+    dst_role: hub
+    protocol: tcp
+    port: 8000
+    action: allow
+    priority: 60
+
+# What can access ops nodes (inbound)
+inbound:
+  # SSH from Hub (bastion)
+  - name: hub-to-ops-ssh
+    description: "Allow SSH from Hub bastion"
+    src_role: hub
+    protocol: tcp
+    port: 22
+    action: allow
+    priority: 100
+
+  # Prometheus federation
+  - name: ops-prometheus-federation
+    description: "Allow Prometheus federation between ops nodes"
+    src_role: ops
+    protocol: tcp
+    port: 9090
+    action: allow
+    priority: 90
+
+  # Grafana access
+  - name: hub-to-ops-grafana
+    description: "Allow Hub to proxy Grafana"
+    src_role: hub
+    protocol: tcp
+    port: 3000
+    action: allow
+    priority: 89
+
+  # Alertmanager clustering
+  - name: ops-alertmanager-cluster
+    description: "Allow Alertmanager clustering"
+    src_role: ops
+    protocol: tcp
+    port: 9094
+    action: allow
+    priority: 80
+
+  # Log forwarding from all nodes
+  - name: all-to-ops-syslog
+    description: "Accept logs from all nodes"
+    src_role: "*"
+    protocol: tcp
+    port: 514
+    action: allow
+    priority: 70
+
+  - name: all-to-ops-fluentd
+    description: "Accept Fluentd logs"
+    src_role: "*"
+    protocol: tcp
+    port: 24224
+    action: allow
+    priority: 69
+
+# Monitoring services
+services:
+  prometheus:
+    description: "Prometheus monitoring server"
+    ports:
+      - 9090  # Prometheus
+      - 9093  # Alertmanager
+      - 9094  # Alertmanager cluster
+    inbound:
+      - name: grafana-to-prometheus
+        src_role: ops
+        protocol: tcp
+        port: 9090
+        action: allow
+        priority: 200
+
+  grafana:
+    description: "Grafana dashboard server"
+    ports:
+      - 3000
+    inbound:
+      - name: hub-to-grafana
+        src_role: hub
+        protocol: tcp
+        port: 3000
+        action: allow
+        priority: 200
+
+  elk-stack:
+    description: "ELK Stack for log aggregation"
+    ports:
+      - 9200  # Elasticsearch
+      - 5601  # Kibana
+      - 5044  # Logstash Beats
+    inbound:
+      - name: logstash-beats
+        src_role: "*"
+        protocol: tcp
+        port: 5044
+        action: allow
+        priority: 200

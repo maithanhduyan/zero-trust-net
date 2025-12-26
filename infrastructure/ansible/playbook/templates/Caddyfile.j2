@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+# Caddy Reverse Proxy Configuration
+
+{{ inventory_hostname }} {
+    # Reverse proxy to Control Plane API
+    reverse_proxy localhost:8000
+
+    # TLS configuration (automatic Let's Encrypt)
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+}

@@ -1,0 +1,152 @@
+---
+# infrastructure/ansible/playbook/deploy-agents.yml
+# Deploy Zero Trust Agent to spoke nodes
+
+- name: Deploy Zero Trust Agent
+  hosts: agent
+  become: true
+
+  vars:
+    control_plane_url: "https://{{ hostvars[groups['hub'][0]]['ansible_host'] }}"
+    wireguard_interface: wg0
+    agent_version: "1.0.0"
+    sync_interval: 60
+
+  tasks:
+    # ============================================
+    # PREREQUISITES
+    # ============================================
+    - name: Install system packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+          - wireguard
+          - wireguard-tools
+          - iptables
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: yes
+
+    - name: Create WireGuard directory
+      file:
+        path: /etc/wireguard
+        state: directory
+        mode: '0700'
+
+    # ============================================
+    # WIREGUARD SETUP
+    # ============================================
+    - name: Check if WireGuard keys exist
+      stat:
+        path: /etc/wireguard/private.key
+      register: wg_private_key
+
+    - name: Generate WireGuard private key
+      shell: wg genkey > /etc/wireguard/private.key
+      args:
+        creates: /etc/wireguard/private.key
+      when: not wg_private_key.stat.exists
+
+    - name: Set private key permissions
+      file:
+        path: /etc/wireguard/private.key
+        mode: '0600'
+
+    - name: Generate WireGuard public key
+      shell: cat /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key
+      args:
+        creates: /etc/wireguard/public.key
+
+    - name: Read public key
+      slurp:
+        src: /etc/wireguard/public.key
+      register: node_public_key
+
+    - name: Set public key fact
+      set_fact:
+        public_key: "{{ node_public_key.content | b64decode | trim }}"
+
+    - name: Display node info
+      debug:
+        msg: "Node: {{ inventory_hostname }} | Role: {{ node_role }} | Public Key: {{ public_key }}"
+
+    # ============================================
+    # AGENT DEPLOYMENT
+    # ============================================
+    - name: Create agent directory
+      file:
+        path: /opt/zt-agent
+        state: directory
+        mode: '0755'
+
+    - name: Copy agent source code
+      copy:
+        src: "{{ playbook_dir }}/../../../agent/"
+        dest: /opt/zt-agent/
+        mode: preserve
+
+    - name: Create virtual environment
+      command: python3 -m venv /opt/zt-agent/venv
+      args:
+        creates: /opt/zt-agent/venv
+
+    - name: Install agent with uv
+      shell: |
+        cd /opt/zt-agent
+        curl -LsSf https://astral.sh/uv/install.sh | sh 2>/dev/null || true
+        if command -v ~/.cargo/bin/uv &> /dev/null; then
+          ~/.cargo/bin/uv sync
+        else
+          /opt/zt-agent/venv/bin/pip install -e .
+        fi
+      args:
+        creates: /opt/zt-agent/.venv
+
+    - name: Create agent config file
+      template:
+        src: templates/zt-agent.conf.j2
+        dest: /etc/zt-agent.conf
+        mode: '0600'
+
+    - name: Create systemd service for Agent
+      template:
+        src: templates/zt-agent.service.j2
+        dest: /etc/systemd/system/zt-agent.service
+        mode: '0644'
+      notify: Restart Agent
+
+    - name: Enable and start Agent
+      systemd:
+        name: zt-agent
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    # ============================================
+    # REGISTRATION
+    # ============================================
+    - name: Wait for agent to register
+      wait_for:
+        timeout: 30
+
+    - name: Check agent registration status
+      uri:
+        url: "{{ control_plane_url }}/api/v1/agent/status/{{ inventory_hostname }}"
+        method: GET
+        return_content: yes
+        validate_certs: no
+      register: registration_status
+      ignore_errors: yes
+
+    - name: Display registration status
+      debug:
+        msg: "Registration status: {{ registration_status.json | default('Not registered yet') }}"
+
+  handlers:
+    - name: Restart Agent
+      systemd:
+        name: zt-agent
+        state: restarted

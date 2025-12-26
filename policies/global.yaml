@@ -1,0 +1,105 @@
+# policies/global.yaml
+# Global Zero Trust Network Policies
+# Default: Deny all, allow only explicitly defined
+
+metadata:
+  version: "1.0"
+  description: "Global network policies following NIST SP 800-207"
+  author: "Zero Trust Admin"
+  last_updated: "2024-01-01"
+
+# Global settings
+settings:
+  # Default action for undefined traffic
+  default_action: deny
+
+  # Log all denied traffic
+  log_denied: true
+
+  # Enable connection tracking
+  connection_tracking: true
+
+  # Rate limiting (packets per second)
+  rate_limit:
+    enabled: true
+    pps: 1000
+    burst: 2000
+
+# Trust Zones
+zones:
+  - name: hub
+    description: "Central hub node"
+    overlay_network: "10.0.0.1/32"
+    trust_level: high
+
+  - name: internal
+    description: "Internal overlay network"
+    overlay_network: "10.0.0.0/24"
+    trust_level: medium
+
+  - name: external
+    description: "Outside world"
+    overlay_network: "0.0.0.0/0"
+    trust_level: untrusted
+
+# Default policies (applied to all nodes)
+default_policies:
+  # Allow traffic to Hub's WireGuard port
+  - name: allow-wireguard-hub
+    description: "Allow WireGuard handshake to Hub"
+    src_role: "*"
+    dst_role: hub
+    protocol: udp
+    port: 51820
+    action: allow
+    priority: 1000
+
+  # Allow SSH from ops role (for management)
+  - name: allow-ops-ssh
+    description: "Allow SSH from ops nodes"
+    src_role: ops
+    dst_role: "*"
+    protocol: tcp
+    port: 22
+    action: allow
+    priority: 900
+
+  # Allow Prometheus metrics scraping from ops
+  - name: allow-ops-prometheus
+    description: "Allow Prometheus node_exporter access"
+    src_role: ops
+    dst_role: "*"
+    protocol: tcp
+    port: 9100
+    action: allow
+    priority: 890
+
+  # Allow DNS to Hub (if Hub runs DNS)
+  - name: allow-dns
+    description: "Allow DNS queries to Hub"
+    src_role: "*"
+    dst_role: hub
+    protocol: udp
+    port: 53
+    action: allow
+    priority: 800
+
+  # Allow ICMP for troubleshooting
+  - name: allow-icmp
+    description: "Allow ICMP ping"
+    src_role: "*"
+    dst_role: "*"
+    protocol: icmp
+    action: allow
+    priority: 700
+
+# Audit logging
+audit:
+  # Log policy changes
+  log_policy_changes: true
+
+  # Log connection attempts
+  log_connections: true
+
+  # Retention days
+  retention_days: 90

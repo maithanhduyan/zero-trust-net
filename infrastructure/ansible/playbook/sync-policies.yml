@@ -1,0 +1,165 @@
+---
+# infrastructure/ansible/playbook/sync-policies.yml
+# Sync policy files to Control Plane
+
+- name: Sync Zero Trust Policies
+  hosts: hub
+  become: true
+
+  vars:
+    policies_dir: "{{ playbook_dir }}/../../../policies"
+    control_plane_url: "http://localhost:8000"
+    admin_token: "{{ lookup('env', 'ADMIN_SECRET') | default('your-admin-secret-key') }}"
+
+  tasks:
+    # ============================================
+    # READ POLICY FILES
+    # ============================================
+    - name: Find all policy YAML files
+      find:
+        paths: "{{ policies_dir }}"
+        patterns: "*.yaml,*.yml"
+        recurse: yes
+      delegate_to: localhost
+      register: policy_files
+      become: no
+
+    - name: Read global policy
+      slurp:
+        src: "{{ policies_dir }}/global.yaml"
+      delegate_to: localhost
+      register: global_policy_content
+      become: no
+
+    - name: Parse global policy
+      set_fact:
+        global_policy: "{{ global_policy_content.content | b64decode | from_yaml }}"
+
+    - name: Display global policy settings
+      debug:
+        msg: "Global policy version: {{ global_policy.metadata.version }}"
+
+    # ============================================
+    # SYNC DEFAULT POLICIES
+    # ============================================
+    - name: Create default policies from global.yaml
+      uri:
+        url: "{{ control_plane_url }}/api/v1/admin/policies"
+        method: POST
+        headers:
+          Content-Type: application/json
+          X-Admin-Token: "{{ admin_token }}"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          description: "{{ item.description }}"
+          src_role: "{{ item.src_role }}"
+          dst_role: "{{ item.dst_role }}"
+          protocol: "{{ item.protocol | default('tcp') }}"
+          port: "{{ item.port | default(omit) }}"
+          action: "{{ item.action }}"
+          priority: "{{ item.priority }}"
+          enabled: true
+        status_code: [200, 201, 409]
+        validate_certs: no
+      loop: "{{ global_policy.default_policies }}"
+      when: global_policy.default_policies is defined
+      ignore_errors: yes
+
+    # ============================================
+    # SYNC ROLE POLICIES
+    # ============================================
+    - name: Read app role policy
+      slurp:
+        src: "{{ policies_dir }}/roles/app.yaml"
+      delegate_to: localhost
+      register: app_policy_content
+      become: no
+      ignore_errors: yes
+
+    - name: Parse app policy
+      set_fact:
+        app_policy: "{{ app_policy_content.content | b64decode | from_yaml }}"
+      when: app_policy_content is succeeded
+
+    - name: Create app outbound policies
+      uri:
+        url: "{{ control_plane_url }}/api/v1/admin/policies"
+        method: POST
+        headers:
+          Content-Type: application/json
+          X-Admin-Token: "{{ admin_token }}"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          description: "{{ item.description }}"
+          src_role: "app"
+          dst_role: "{{ item.dst_role }}"
+          protocol: "{{ item.protocol | default('tcp') }}"
+          port: "{{ item.port | default(omit) }}"
+          action: "{{ item.action }}"
+          priority: "{{ item.priority }}"
+          enabled: true
+        status_code: [200, 201, 409]
+        validate_certs: no
+      loop: "{{ app_policy.outbound | default([]) }}"
+      when: app_policy is defined
+      ignore_errors: yes
+
+    - name: Read database role policy
+      slurp:
+        src: "{{ policies_dir }}/roles/database.yaml"
+      delegate_to: localhost
+      register: db_policy_content
+      become: no
+      ignore_errors: yes
+
+    - name: Parse database policy
+      set_fact:
+        db_policy: "{{ db_policy_content.content | b64decode | from_yaml }}"
+      when: db_policy_content is succeeded
+
+    - name: Create database inbound policies
+      uri:
+        url: "{{ control_plane_url }}/api/v1/admin/policies"
+        method: POST
+        headers:
+          Content-Type: application/json
+          X-Admin-Token: "{{ admin_token }}"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          description: "{{ item.description }}"
+          src_role: "{{ item.src_role }}"
+          dst_role: "db"
+          protocol: "{{ item.protocol | default('tcp') }}"
+          port: "{{ item.port | default(omit) }}"
+          action: "{{ item.action }}"
+          priority: "{{ item.priority }}"
+          enabled: true
+        status_code: [200, 201, 409]
+        validate_certs: no
+      loop: "{{ db_policy.inbound | default([]) }}"
+      when: db_policy is defined
+      ignore_errors: yes
+
+    # ============================================
+    # VERIFY POLICIES
+    # ============================================
+    - name: Get all policies
+      uri:
+        url: "{{ control_plane_url }}/api/v1/admin/policies"
+        method: GET
+        headers:
+          X-Admin-Token: "{{ admin_token }}"
+        return_content: yes
+        validate_certs: no
+      register: all_policies
+
+    - name: Display policy count
+      debug:
+        msg: "Total policies synced: {{ all_policies.json.data | length }}"
+
+    - name: List policy names
+      debug:
+        msg: "{{ all_policies.json.data | map(attribute='name') | list }}"

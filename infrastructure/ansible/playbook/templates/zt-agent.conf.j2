@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# Zero Trust Agent Configuration
+
+[agent]
+hostname = {{ inventory_hostname }}
+role = {{ node_role }}
+control_plane_url = {{ control_plane_url }}
+sync_interval = {{ sync_interval | default(60) }}
+
+[wireguard]
+interface = wg0
+config_dir = /etc/wireguard
+
+[logging]
+level = INFO
+file = /var/log/zt-agent.log

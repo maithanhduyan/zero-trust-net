@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+# WireGuard Hub Configuration
+
+[Interface]
+Address = {{ overlay_address }}
+ListenPort = {{ wireguard_port }}
+PrivateKey = {{ wg_private_key_content.content | b64decode | trim }}
+MTU = 1420
+
+# Enable IP forwarding
+PostUp = iptables -A FORWARD -i %i -j ACCEPT
+PostUp = iptables -A FORWARD -o %i -j ACCEPT
+PostUp = iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+PostDown = iptables -D FORWARD -i %i -j ACCEPT
+PostDown = iptables -D FORWARD -o %i -j ACCEPT
+PostDown = iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+# Peers will be added dynamically by Control Plane
+# When a new node registers, Control Plane will:
+# 1. Call wg set wg0 peer <PUBLIC_KEY> allowed-ips <OVERLAY_IP>/32
+# 2. Or regenerate this file and restart WireGuard

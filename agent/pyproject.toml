@@ -1,11 +1,23 @@
 [project]
-name = "agent"
-version = "0.1.0"
-description = "The Muscle of Zero Trust"
+name = "zt-agent"
+version = "1.0.0"
+description = "Zero Trust Network Agent - The Muscle of Zero Trust"
 requires-python = ">=3.10"
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+full = [
     "requests>=2.31.0",
     "schedule>=1.2.1",
     "psutil>=5.9.8",
-    "netifaces>=0.11.0",
 ]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+zt-agent = "agent:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

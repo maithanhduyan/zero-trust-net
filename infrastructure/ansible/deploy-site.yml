@@ -1,0 +1,116 @@
+---
+# infrastructure/ansible/deploy-site.yml
+# Master playbook - Deploy entire Zero Trust Network
+
+# Run: ansible-playbook -i inventory/hosts.ini deploy-site.yml
+
+- name: Zero Trust Network - Full Deployment
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Display deployment info
+      debug:
+        msg: |
+          ========================================
+          Zero Trust Network Deployment
+          ========================================
+          This playbook will:
+          1. Deploy Control Plane + WireGuard Hub
+          2. Deploy Agents to all spoke nodes
+          3. Sync policies from YAML files
+          4. Approve pending nodes (optional)
+          ========================================
+
+# Phase 1: Deploy Hub
+- import_playbook: playbook/deploy-hub.yml
+
+# Phase 2: Deploy Agents
+- import_playbook: playbook/deploy-agents.yml
+
+# Phase 3: Sync Policies
+- import_playbook: playbook/sync-policies.yml
+
+# Phase 4: Approve Nodes (optional)
+- name: Approve Pending Nodes
+  hosts: hub
+  become: true
+  vars:
+    control_plane_url: "http://localhost:8000"
+    admin_token: "{{ lookup('env', 'ADMIN_SECRET') | default('your-admin-secret-key') }}"
+    auto_approve: "{{ lookup('env', 'AUTO_APPROVE') | default('false') }}"
+  tasks:
+    - name: Get pending nodes
+      uri:
+        url: "{{ control_plane_url }}/api/v1/admin/nodes?status=pending"
+        method: GET
+        headers:
+          X-Admin-Token: "{{ admin_token }}"
+        return_content: yes
+        validate_certs: no
+      register: pending_nodes
+      when: auto_approve | bool
+
+    - name: Display pending nodes
+      debug:
+        msg: "Pending nodes: {{ pending_nodes.json.data | map(attribute='hostname') | list }}"
+      when: auto_approve | bool and pending_nodes.json.data | length > 0
+
+    - name: Approve all pending nodes
+      uri:
+        url: "{{ control_plane_url }}/api/v1/admin/nodes/{{ item.id }}/approve"
+        method: POST
+        headers:
+          X-Admin-Token: "{{ admin_token }}"
+        status_code: [200, 404]
+        validate_certs: no
+      loop: "{{ pending_nodes.json.data }}"
+      when: auto_approve | bool and pending_nodes.json.data | length > 0
+
+# Phase 5: Verify Deployment
+- name: Verify Deployment
+  hosts: hub
+  become: true
+  vars:
+    control_plane_url: "http://localhost:8000"
+    admin_token: "{{ lookup('env', 'ADMIN_SECRET') | default('your-admin-secret-key') }}"
+  tasks:
+    - name: Check Control Plane health
+      uri:
+        url: "{{ control_plane_url }}/health"
+        method: GET
+        return_content: yes
+      register: health_check
+
+    - name: Display health status
+      debug:
+        msg: "Control Plane: {{ health_check.json.status }}"
+
+    - name: Get network stats
+      uri:
+        url: "{{ control_plane_url }}/api/v1/admin/network/stats"
+        method: GET
+        headers:
+          X-Admin-Token: "{{ admin_token }}"
+        return_content: yes
+        validate_certs: no
+      register: network_stats
+
+    - name: Display network stats
+      debug:
+        msg: |
+          ========================================
+          Network Statistics
+          ========================================
+          Total Nodes: {{ network_stats.json.data.total_nodes }}
+          Active Nodes: {{ network_stats.json.data.active_nodes }}
+          Allocated IPs: {{ network_stats.json.data.allocated_ips }}
+          Available IPs: {{ network_stats.json.data.available_ips }}
+          ========================================
+
+    - name: Check WireGuard status
+      command: wg show wg0
+      register: wg_status
+
+    - name: Display WireGuard peers
+      debug:
+        msg: "{{ wg_status.stdout_lines }}"

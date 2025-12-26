@@ -1,0 +1,240 @@
+---
+# infrastructure/ansible/playbook/deploy-hub.yml
+# Deploy Control Plane and WireGuard Hub
+
+- name: Deploy Zero Trust Hub
+  hosts: hub
+  become: true
+
+  vars:
+    control_plane_port: 8000
+    wireguard_interface: wg0
+    overlay_address: "10.0.0.1/24"
+    wireguard_port: 51820
+
+  tasks:
+    # ============================================
+    # PREREQUISITES
+    # ============================================
+    - name: Install system packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+          - wireguard
+          - wireguard-tools
+          - iptables
+          - ca-certificates
+          - curl
+          - git
+        state: present
+        update_cache: yes
+
+    - name: Enable IP forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_set: yes
+        state: present
+        reload: yes
+
+    - name: Enable IP forwarding (persist)
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "net.ipv4.ip_forward = 1"
+        state: present
+
+    # ============================================
+    # WIREGUARD SETUP
+    # ============================================
+    - name: Create WireGuard directory
+      file:
+        path: /etc/wireguard
+        state: directory
+        mode: '0700'
+
+    - name: Check if WireGuard keys exist
+      stat:
+        path: /etc/wireguard/private.key
+      register: wg_private_key
+
+    - name: Generate WireGuard private key
+      shell: wg genkey > /etc/wireguard/private.key
+      args:
+        creates: /etc/wireguard/private.key
+      when: not wg_private_key.stat.exists
+
+    - name: Set private key permissions
+      file:
+        path: /etc/wireguard/private.key
+        mode: '0600'
+
+    - name: Generate WireGuard public key
+      shell: cat /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key
+      args:
+        creates: /etc/wireguard/public.key
+
+    - name: Read private key
+      slurp:
+        src: /etc/wireguard/private.key
+      register: wg_private_key_content
+
+    - name: Read public key
+      slurp:
+        src: /etc/wireguard/public.key
+      register: wg_public_key_content
+
+    - name: Set public key fact
+      set_fact:
+        hub_public_key: "{{ wg_public_key_content.content | b64decode | trim }}"
+
+    - name: Display Hub public key
+      debug:
+        msg: "Hub Public Key: {{ hub_public_key }}"
+
+    - name: Create WireGuard config for Hub
+      template:
+        src: templates/wg0-hub.conf.j2
+        dest: /etc/wireguard/wg0.conf
+        mode: '0600'
+      notify: Restart WireGuard
+
+    - name: Enable and start WireGuard
+      systemd:
+        name: wg-quick@wg0
+        enabled: yes
+        state: started
+
+    # ============================================
+    # CONTROL PLANE DEPLOYMENT
+    # ============================================
+    - name: Create control plane directory
+      file:
+        path: /opt/control-plane
+        state: directory
+        mode: '0755'
+
+    - name: Copy control plane source code
+      copy:
+        src: "{{ playbook_dir }}/../../control-plane/"
+        dest: /opt/control-plane/
+        mode: preserve
+
+    - name: Create virtual environment
+      command: python3 -m venv /opt/control-plane/venv
+      args:
+        creates: /opt/control-plane/venv
+
+    - name: Install Python dependencies
+      pip:
+        requirements: /opt/control-plane/pyproject.toml
+        virtualenv: /opt/control-plane/venv
+        extra_args: --upgrade
+      ignore_errors: yes
+
+    - name: Install control plane with uv
+      shell: |
+        cd /opt/control-plane
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        ~/.cargo/bin/uv sync
+      args:
+        creates: /opt/control-plane/.venv
+
+    - name: Create .env file
+      template:
+        src: templates/control-plane.env.j2
+        dest: /opt/control-plane/.env
+        mode: '0600'
+
+    - name: Create systemd service for Control Plane
+      template:
+        src: templates/control-plane.service.j2
+        dest: /etc/systemd/system/control-plane.service
+        mode: '0644'
+      notify: Restart Control Plane
+
+    - name: Enable and start Control Plane
+      systemd:
+        name: control-plane
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    # ============================================
+    # CADDY REVERSE PROXY (HTTPS)
+    # ============================================
+    - name: Install Caddy
+      shell: |
+        apt install -y debian-keyring debian-archive-keyring apt-transport-https
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+        apt update
+        apt install -y caddy
+      args:
+        creates: /usr/bin/caddy
+
+    - name: Configure Caddy
+      template:
+        src: templates/Caddyfile.j2
+        dest: /etc/caddy/Caddyfile
+        mode: '0644'
+      notify: Restart Caddy
+
+    - name: Enable and start Caddy
+      systemd:
+        name: caddy
+        enabled: yes
+        state: started
+
+    # ============================================
+    # FIREWALL RULES
+    # ============================================
+    - name: Configure iptables for Hub
+      iptables:
+        chain: FORWARD
+        in_interface: wg0
+        jump: ACCEPT
+        comment: "Allow WireGuard forwarding"
+
+    - name: Configure NAT masquerade
+      iptables:
+        table: nat
+        chain: POSTROUTING
+        out_interface: eth0
+        jump: MASQUERADE
+        comment: "NAT for WireGuard"
+
+    - name: Allow WireGuard port
+      iptables:
+        chain: INPUT
+        protocol: udp
+        destination_port: "{{ wireguard_port }}"
+        jump: ACCEPT
+        comment: "Allow WireGuard"
+
+    - name: Save iptables rules
+      shell: iptables-save > /etc/iptables.rules
+
+    - name: Restore iptables on boot
+      lineinfile:
+        path: /etc/rc.local
+        line: "iptables-restore < /etc/iptables.rules"
+        create: yes
+        mode: '0755'
+
+  handlers:
+    - name: Restart WireGuard
+      systemd:
+        name: wg-quick@wg0
+        state: restarted
+
+    - name: Restart Control Plane
+      systemd:
+        name: control-plane
+        state: restarted
+
+    - name: Restart Caddy
+      systemd:
+        name: caddy
+        state: restarted

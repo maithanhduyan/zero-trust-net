@@ -1,0 +1,136 @@
+# policies/roles/app.yaml
+# Policies for Application Server nodes (role: app)
+# Defines what app servers can access and what can access them
+
+metadata:
+  role: app
+  description: "Application server policies"
+  version: "1.0"
+
+# What app nodes can access (outbound)
+outbound:
+  # Access to database servers
+  - name: app-to-database
+    description: "Allow app to connect to PostgreSQL"
+    dst_role: db
+    protocol: tcp
+    port: 5432
+    action: allow
+    priority: 100
+
+  # Access to Redis cache
+  - name: app-to-redis
+    description: "Allow app to connect to Redis"
+    dst_role: db
+    protocol: tcp
+    port: 6379
+    action: allow
+    priority: 99
+
+  # Access to MongoDB (if needed)
+  - name: app-to-mongodb
+    description: "Allow app to connect to MongoDB"
+    dst_role: db
+    protocol: tcp
+    port: 27017
+    action: allow
+    priority: 98
+
+  # Inter-app communication (microservices)
+  - name: app-to-app
+    description: "Allow app-to-app HTTP communication"
+    dst_role: app
+    protocol: tcp
+    port: 8080
+    action: allow
+    priority: 90
+
+  - name: app-to-app-grpc
+    description: "Allow app-to-app gRPC communication"
+    dst_role: app
+    protocol: tcp
+    port: 9090
+    action: allow
+    priority: 89
+
+  # Access to Hub for control plane API
+  - name: app-to-control-plane
+    description: "Allow app to reach Control Plane API"
+    dst_role: hub
+    protocol: tcp
+    port: 8000
+    action: allow
+    priority: 80
+
+# What can access app nodes (inbound)
+inbound:
+  # Load balancer / reverse proxy access
+  - name: hub-to-app-http
+    description: "Allow Hub to proxy HTTP traffic"
+    src_role: hub
+    protocol: tcp
+    port: 8080
+    action: allow
+    priority: 100
+
+  - name: hub-to-app-https
+    description: "Allow Hub to proxy HTTPS traffic"
+    src_role: hub
+    protocol: tcp
+    port: 8443
+    action: allow
+    priority: 99
+
+  # Health checks from ops
+  - name: ops-to-app-health
+    description: "Allow health check endpoint"
+    src_role: ops
+    protocol: tcp
+    port: 8080
+    action: allow
+    priority: 90
+
+  # Metrics endpoint
+  - name: ops-to-app-metrics
+    description: "Allow Prometheus metrics scraping"
+    src_role: ops
+    protocol: tcp
+    port: 9100
+    action: allow
+    priority: 89
+
+# Service-specific policies (override for specific hostnames)
+services:
+  api-gateway:
+    description: "API Gateway - accepts external traffic via Hub"
+    inbound:
+      - name: hub-to-gateway
+        src_role: hub
+        protocol: tcp
+        port: 8080
+        action: allow
+        priority: 200
+    outbound:
+      - name: gateway-to-all-apps
+        dst_role: app
+        protocol: tcp
+        port: 8080
+        action: allow
+        priority: 200
+
+  auth-service:
+    description: "Authentication service"
+    inbound:
+      - name: app-to-auth
+        src_role: app
+        protocol: tcp
+        port: 8080
+        action: allow
+        priority: 200
+    outbound:
+      - name: auth-to-db
+        dst_role: db
+        protocol: tcp
+        port: 5432
+        action: allow
+        priority: 200

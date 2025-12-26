@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Zero Trust Network Agent
+After=network.target
+Wants=wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/zt-agent
+Environment=PATH=/opt/zt-agent/.venv/bin:/opt/zt-agent/venv/bin:/usr/local/bin:/usr/bin
+ExecStart=/opt/zt-agent/.venv/bin/python agent.py \
+    --hostname {{ inventory_hostname }} \
+    --role {{ node_role }} \
+    --control-plane {{ control_plane_url }} \
+    --sync-interval {{ sync_interval | default(60) }}
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
