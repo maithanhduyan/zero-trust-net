@@ -1,5 +1,10 @@
 {
     "recommendations": [
+        "PKief.material-icon-theme",
+        "naumovs.color-highlight",
+        "ms-azuretools.vscode-containers",
+        "ms-vscode-remote.remote-containers",
+        "shd101wyy.markdown-preview-enhanced",
         "tomoki1207.pdf"
     ]
 }

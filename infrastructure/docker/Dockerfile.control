@@ -1,0 +1,35 @@
+# --- STAGE 1: Builder (Cài đặt dependencies) ---
+FROM ghcr.io/astral-sh/uv:python3.10-bookworm-slim AS builder
+
+WORKDIR /app
+
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
+# Copy các file định nghĩa dependencies trước
+COPY pyproject.toml uv.lock ./
+COPY control-plane/pyproject.toml ./control-plane/
+COPY agent/pyproject.toml ./agent/
+
+# Đồng bộ dependencies (chưa cần source code)
+# Lệnh này sẽ tạo virtualenv tại .venv
+RUN uv sync --frozen --no-install-project
+
+# --- STAGE 2: Runtime (Chạy ứng dụng) ---
+FROM python:3.10-slim-bookworm
+
+WORKDIR /app
+
+# Copy môi trường ảo từ builder sang
+COPY --from=builder /app/.venv /app/.venv
+
+# Đặt đường dẫn để dùng python trong venv mặc định
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy source code
+COPY control-plane ./control-plane
+
+# Chuyển vào thư mục làm việc
+WORKDIR /app/control-plane
+
+# Chạy server
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
