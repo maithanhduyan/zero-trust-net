@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import logging
 
-from database.models import Node, NodeStatus, AuditLog
+from database.models import Node, NodeStatus, AuditLog, NodeHistory
 from config import settings
 from .ipam import ipam_service
 from .wireguard_service import wireguard_service
@@ -26,11 +26,43 @@ class NodeManager:
     2. Allocate overlay IPs
     3. Approve/suspend/revoke nodes
     4. Track node status
+    5. Record node history
     """
 
     def __init__(self):
         self.hub_public_key = settings.HUB_PUBLIC_KEY
         self.hub_endpoint = settings.HUB_ENDPOINT
+
+    def _record_history(
+        self,
+        db: Session,
+        node: Node,
+        event: str,
+        old_status: Optional[str] = None,
+        new_status: Optional[str] = None,
+        details: Optional[str] = None,
+        triggered_by: str = "system"
+    ):
+        """Record a node lifecycle event to history"""
+        try:
+            history = NodeHistory(
+                node_id=node.id,
+                hostname=node.hostname,
+                event=event,
+                old_status=old_status,
+                new_status=new_status,
+                overlay_ip=node.overlay_ip,
+                real_ip=node.real_ip,
+                public_key=node.public_key,
+                details=details,
+                triggered_by=triggered_by
+            )
+            db.add(history)
+            db.commit()
+            logger.debug(f"Recorded history: {node.hostname} -> {event}")
+        except Exception as e:
+            logger.warning(f"Failed to record history: {e}")
+            db.rollback()
 
     def register_node(
         self,
@@ -77,6 +109,13 @@ class NodeManager:
                 existing_by_key.agent_version = agent_version
             db.commit()
             logger.info(f"Node re-registered: {existing_by_key.hostname}")
+            
+            # Record re-registration in history
+            self._record_history(
+                db, existing_by_key, "re-registered",
+                triggered_by="agent",
+                details=f'{{"agent_version": "{agent_version}", "real_ip": "{client_ip}"}}'
+            )
 
             # Ensure peer exists in WireGuard (for re-registration after Hub restart)
             if existing_by_key.status == NodeStatus.ACTIVE.value:
@@ -141,6 +180,14 @@ class NodeManager:
             )
 
             logger.info(f"New node registered: {hostname} -> {overlay_ip}")
+            
+            # Record registration in history
+            self._record_history(
+                db, new_node, "registered",
+                new_status=initial_status,
+                triggered_by="agent",
+                details=f'{{"agent_version": "{agent_version}", "os_info": "{os_info}"}}'
+            )
 
             # Auto-add peer to WireGuard if node is active
             if new_node.status == NodeStatus.ACTIVE.value:

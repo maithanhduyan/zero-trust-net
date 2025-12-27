@@ -214,3 +214,59 @@ class AuditLog(Base):
         Index('ix_audit_event_created', 'event_type', 'created_at'),
         Index('ix_audit_actor_created', 'actor_type', 'actor_id', 'created_at'),
     )
+
+
+class NodeHistory(Base):
+    """
+    Node History table - tracks node lifecycle events
+    Stores detailed history of node status changes, installations, uninstalls
+    
+    Use cases:
+    - Track when node was installed/uninstalled
+    - Monitor node uptime patterns
+    - Audit trail for compliance
+    - Debug connectivity issues
+    """
+    __tablename__ = "node_history"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    # Node reference
+    node_id = Column(Integer, nullable=False, index=True,
+                     comment="Reference to nodes.id")
+    hostname = Column(String(63), nullable=False, index=True,
+                      comment="Hostname at time of event (denormalized for history)")
+    
+    # Event information
+    event = Column(String(50), nullable=False, index=True,
+                   comment="Event: registered, re-registered, uninstalled, status_changed, heartbeat_lost, peer_added, peer_removed")
+    
+    # Status tracking
+    old_status = Column(String(20), nullable=True,
+                        comment="Previous status (for status_changed events)")
+    new_status = Column(String(20), nullable=True,
+                        comment="New status (for status_changed events)")
+    
+    # Network state at event time
+    overlay_ip = Column(String(18), nullable=True,
+                        comment="Overlay IP at time of event")
+    real_ip = Column(String(45), nullable=True,
+                     comment="Public IP at time of event")
+    public_key = Column(String(44), nullable=True,
+                        comment="WireGuard public key at time of event")
+    
+    # Additional context
+    details = Column(Text, nullable=True,
+                     comment="JSON-encoded additional details")
+    triggered_by = Column(String(50), nullable=True,
+                          comment="What triggered: agent, admin, system, hub")
+    
+    # Timestamp
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Indexes for common queries
+    __table_args__ = (
+        Index('ix_node_history_node_event', 'node_id', 'event'),
+        Index('ix_node_history_event_created', 'event', 'created_at'),
+        Index('ix_node_history_hostname_created', 'hostname', 'created_at'),
+    )
