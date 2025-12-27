@@ -270,7 +270,7 @@ configure_wireguard() {
 
 [Interface]
 PrivateKey = ${NODE_PRIVATE_KEY}
-Address = ${OVERLAY_IP}/24
+Address = ${OVERLAY_IP}
 # DNS = 10.10.0.1  # Uncomment if Hub runs DNS
 
 # Zero Trust Firewall Hook
