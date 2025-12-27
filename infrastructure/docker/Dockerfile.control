@@ -1,5 +1,5 @@
 # --- STAGE 1: Builder (Cài đặt dependencies) ---
-FROM ghcr.io/astral-sh/uv:python3.10-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -7,15 +7,15 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1
 # Copy các file định nghĩa dependencies trước
 COPY pyproject.toml uv.lock ./
-COPY control-plane/pyproject.toml ./control-plane/
-COPY agent/pyproject.toml ./agent/
+COPY ./control-plane/pyproject.toml ./control-plane/
+COPY ./agent/pyproject.toml ./agent/
 
 # Đồng bộ dependencies (chưa cần source code)
 # Lệnh này sẽ tạo virtualenv tại .venv
 RUN uv sync --frozen --no-install-project
 
 # --- STAGE 2: Runtime (Chạy ứng dụng) ---
-FROM python:3.10-slim-bookworm
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy source code
-COPY control-plane ./control-plane
+COPY ./control-plane ./control-plane
 
 # Chuyển vào thư mục làm việc
 WORKDIR /app/control-plane

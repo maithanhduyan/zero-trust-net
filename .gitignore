@@ -25,3 +25,8 @@ build
 
 # Ignore while the setup still depends on requirements.txt files
 uv.lock
+
+# Traefik files
+traefik/acme.json
+traefik/log
+traefik/dynamic.yml

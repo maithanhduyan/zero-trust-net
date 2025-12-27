@@ -1,0 +1,98 @@
+services:
+  # --- CONTROL PLANE API ---
+  control-plane:
+    container_name: zt-control-plane
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.control
+    restart: always
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env
+    networks:
+      - zt-net
+
+  traefik:
+    image: traefik:v3.6.4
+    container_name: traefik
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file: .env
+    command:
+      # traefik
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --ping=true
+      # - --api.debug=true
+      # log
+      - --log=true
+      - --log.level=ERROR
+      - --log.filePath=/var/log/traefik/traefik.log
+      - --accesslog=true
+      - --accesslog.filePath=/var/log/traefik/access.log
+      - --providers.file.filename=/dynamic.yml
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+
+      # http, https
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+
+      # Let's Encrypt
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+    ports:
+      - "80:80" # http
+      - "443:443" # https
+      - "8080:8080" # dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/acme.json:/letsencrypt/acme.json
+      - ./traefik/log:/var/log/traefik
+      - ./traefik/dynamic.yml:/dynamic.yml
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: [ "CMD", "traefik", "healthcheck", "--ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    restart: unless-stopped
+    networks:
+      - zt-net
+
+  caddy:
+    image: caddy:2.8
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/docker/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - zt-net
+
+networks:
+  zt-net:
+    external: true
+
+# Tạo network web nếu chưa có
+# docker network create zt-net
+
+# Liệt các networks đã tạo
+# docker network ls
