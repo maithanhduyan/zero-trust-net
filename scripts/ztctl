@@ -6,7 +6,7 @@
 
 set -e
 
-ZTCTL_VERSION="1.0.0"
+ZTCTL_VERSION="1.1.0"
 HUB_URL="${HUB_URL:-http://localhost:8000}"
 ADMIN_TOKEN="${ADMIN_TOKEN:-change-me-admin-secret}"
 CONFIG_FILE="${ZTCTL_CONFIG:-/etc/zerotrust/ztctl.conf}"
@@ -150,6 +150,184 @@ policy_create() {
 
 policy_remove() { [ -z "$1" ] && { print_error "Usage: ztctl policy remove <id>"; exit 1; }; api_call DELETE "/admin/policies/$1"; print_success "Policy $1 removed"; }
 
+# ============= CLIENT COMMANDS (Mobile/Laptop VPN) =============
+cmd_client() {
+    local subcmd=${1:-list}; shift || true
+    case "$subcmd" in
+        list|ls) client_list "$@" ;;
+        add|create) client_add "$@" ;;
+        show|get) client_show "$@" ;;
+        config) client_config "$@" ;;
+        qr) client_qr "$@" ;;
+        revoke|rm|remove) client_revoke "$@" ;;
+        *)
+            echo "Usage: ztctl client <list|add|show|config|qr|revoke>"
+            echo ""
+            echo "Commands:"
+            echo "  list                    List all client devices"
+            echo "  add <name>              Create new client device"
+            echo "  show <id>               Show device details"
+            echo "  config <id>             Show WireGuard config"
+            echo "  qr <id>                 Generate QR code (terminal)"
+            echo "  revoke <id>             Revoke device access"
+            echo ""
+            echo "Options for 'add':"
+            echo "  --type=<mobile|laptop|desktop>   Device type (default: mobile)"
+            echo "  --user=<email>                   Owner user ID"
+            echo "  --tunnel=<full|split>            Tunnel mode (default: full)"
+            echo "  --expires=<days>                 Expiration days (default: 30)"
+            echo ""
+            echo "Examples:"
+            echo "  ztctl client add iPhone-John --type=mobile --user=john@company.com"
+            echo "  ztctl client add MacBook-Work --type=laptop --tunnel=full --expires=90"
+            echo "  ztctl client qr 1"
+            exit 1
+            ;;
+    esac
+}
+
+client_list() {
+    local user_filter=""
+    for arg in "$@"; do
+        case $arg in
+            --user=*) user_filter="?user_id=${arg#*=}" ;;
+        esac
+    done
+
+    local response=$(api_call GET "/client/devices${user_filter}")
+    check_jq
+    echo -e "\n${CYAN}━━━ CLIENT DEVICES (Mobile/Laptop VPN) ━━━${NC}\n"
+    printf "${BOLD}%-4s %-18s %-8s %-18s %-15s %-8s${NC}\n" "ID" "NAME" "TYPE" "USER" "OVERLAY IP" "STATUS"
+    echo "$response" | jq -r '.devices // . | .[] | "\(.id)\t\(.device_name)\t\(.device_type)\t\(.user_id // "N/A")\t\(.overlay_ip)\t\(.status)"' 2>/dev/null | while IFS=$'\t' read -r id name dtype user ip status; do
+        case "$status" in
+            active) sc="${GREEN}●${NC} active" ;;
+            revoked) sc="${RED}×${NC} revoked" ;;
+            *) sc="$status" ;;
+        esac
+        printf "%-4s %-18s %-8s %-18s %-15s %-10b\n" "$id" "${name:0:18}" "$dtype" "${user:0:18}" "${ip%/*}" "$sc"
+    done
+    echo ""
+}
+
+client_add() {
+    local name="$1"; shift || { print_error "Usage: ztctl client add <name> [options]"; exit 1; }
+    local dtype="mobile" user="" tunnel="full" expires=30 desc=""
+
+    for arg in "$@"; do
+        case $arg in
+            --type=*) dtype="${arg#*=}" ;;
+            --user=*) user="${arg#*=}" ;;
+            --tunnel=*) tunnel="${arg#*=}" ;;
+            --expires=*) expires="${arg#*=}" ;;
+            --desc=*) desc="${arg#*=}" ;;
+        esac
+    done
+
+    local json="{\"device_name\":\"$name\",\"device_type\":\"$dtype\",\"tunnel_mode\":\"$tunnel\",\"expires_days\":$expires"
+    [ -n "$user" ] && json="$json,\"user_id\":\"$user\""
+    [ -n "$desc" ] && json="$json,\"description\":\"$desc\""
+    json="$json}"
+
+    local response=$(api_call POST "/client/devices" "$json")
+    if echo "$response" | grep -q '"error"'; then
+        print_error "$(echo "$response" | jq -r '.detail.error // .error // .message')"
+        exit 1
+    fi
+
+    local id=$(echo "$response" | jq -r '.id')
+    local ip=$(echo "$response" | jq -r '.overlay_ip')
+    local token=$(echo "$response" | jq -r '.config_token')
+    local expires_at=$(echo "$response" | jq -r '.expires_at')
+
+    print_success "Client device created: $name (ID: $id)"
+    echo -e "  Type:       $dtype"
+    echo -e "  Overlay IP: $ip"
+    echo -e "  Tunnel:     $tunnel ($([ "$tunnel" = "full" ] && echo "all traffic via VPN" || echo "overlay only"))"
+    echo -e "  Expires:    ${expires_at:0:10}"
+    echo ""
+    echo -e "${YELLOW}Config download URL:${NC}"
+    echo "  ${HUB_URL}/api/v1/client/config/$token"
+    echo ""
+    echo -e "${YELLOW}QR code URL (for mobile):${NC}"
+    echo "  ${HUB_URL}/api/v1/client/config/$token/qr"
+    echo ""
+    print_info "Run 'ztctl client qr $id' to show QR in terminal"
+}
+
+client_show() {
+    [ -z "$1" ] && { print_error "Usage: ztctl client show <id>"; exit 1; }
+    api_call GET "/client/devices/$1" | jq '.'
+}
+
+client_config() {
+    [ -z "$1" ] && { print_error "Usage: ztctl client config <id>"; exit 1; }
+
+    # Get device to find token
+    local device=$(api_call GET "/client/devices/$1")
+    local token=$(echo "$device" | jq -r '.config_token // empty')
+
+    if [ -z "$token" ]; then
+        print_error "No config token found. Device may be revoked."
+        exit 1
+    fi
+
+    echo -e "\n${CYAN}━━━ WIREGUARD CONFIG ━━━${NC}\n"
+    curl -s "${HUB_URL}/api/v1/client/config/$token/raw"
+    echo -e "\n"
+}
+
+client_qr() {
+    [ -z "$1" ] && { print_error "Usage: ztctl client qr <id>"; exit 1; }
+
+    # Check if qrencode is installed
+    if ! command -v qrencode &>/dev/null; then
+        print_info "Install qrencode for terminal QR: apt install qrencode"
+        echo ""
+
+        # Fallback: show URL
+        local device=$(api_call GET "/client/devices/$1")
+        local token=$(echo "$device" | jq -r '.config_token // empty')
+        local name=$(echo "$device" | jq -r '.device_name')
+
+        if [ -n "$token" ]; then
+            echo -e "${YELLOW}Open this URL on mobile to scan QR:${NC}"
+            echo "  ${HUB_URL}/api/v1/client/config/$token/qr"
+            echo ""
+            echo -e "${YELLOW}Or download config file:${NC}"
+            echo "  ${HUB_URL}/api/v1/client/config/$token/raw"
+        fi
+        exit 0
+    fi
+
+    # Get config and generate QR in terminal
+    local device=$(api_call GET "/client/devices/$1")
+    local token=$(echo "$device" | jq -r '.config_token // empty')
+    local name=$(echo "$device" | jq -r '.device_name')
+
+    if [ -z "$token" ]; then
+        print_error "No config token found. Device may be revoked."
+        exit 1
+    fi
+
+    local config=$(curl -s "${HUB_URL}/api/v1/client/config/$token/raw")
+
+    echo -e "\n${CYAN}━━━ QR CODE: $name ━━━${NC}\n"
+    echo "$config" | qrencode -t ANSIUTF8
+    echo -e "\n${GREEN}Scan with WireGuard app on mobile${NC}\n"
+}
+
+client_revoke() {
+    [ -z "$1" ] && { print_error "Usage: ztctl client revoke <id>"; exit 1; }
+
+    local response=$(api_call DELETE "/client/devices/$1")
+    if echo "$response" | grep -q '"success":true'; then
+        print_success "Device $1 revoked"
+    else
+        print_error "$(echo "$response" | jq -r '.detail.error // .error // .message')"
+        exit 1
+    fi
+}
+
 # ============= PEER COMMANDS =============
 cmd_peer() {
     local subcmd=${1:-list}; shift || true
@@ -219,46 +397,87 @@ cmd_status() {
         echo -e "  Status: ${YELLOW}○ Not local${NC}"
     fi
 
-    echo -e "\n${BOLD}Nodes:${NC}"
+    echo -e "\n${BOLD}Server Nodes:${NC}"
     local nodes=$(api_call GET "/admin/nodes" 2>/dev/null)
     check_jq
     local total=$(echo "$nodes" | jq '.nodes // . | length' 2>/dev/null || echo 0)
     local active=$(echo "$nodes" | jq '[(.nodes // .)[] | select(.status=="active")] | length' 2>/dev/null || echo 0)
     echo "  Total: $total | Active: $active"
+
+    echo -e "\n${BOLD}Client Devices (VPN):${NC}"
+    local clients=$(api_call GET "/client/devices" 2>/dev/null)
+    local client_total=$(echo "$clients" | jq '.devices // . | length' 2>/dev/null || echo 0)
+    local client_active=$(echo "$clients" | jq '[(.devices // .)[] | select(.status=="active")] | length' 2>/dev/null || echo 0)
+    echo "  Total: $client_total | Active: $client_active"
     echo ""
 }
 
 # ============= HELP =============
 show_help() {
     cat << 'EOF'
-ZTCTL - Zero Trust Network Control CLI
+ZTCTL - Zero Trust Network Control CLI (v1.1.0)
 
 USAGE:
     ztctl <command> [subcommand] [options]
 
 COMMANDS:
-    node        Manage nodes (list, show, approve, remove)
-    policy      Manage policies (list, allow, deny, remove)
+    node        Manage server nodes (list, show, approve, remove)
+    client      Manage client devices - mobile/laptop VPN (list, add, config, qr, revoke)
+    policy      Manage access policies (list, allow, deny, remove)
     peer        Manage WireGuard peers (list, add, remove)
     sync        Trigger policy sync to all nodes
     status      Show cluster status
     help        Show this help
 
+NODE COMMANDS:
+    ztctl node list                     List all nodes
+    ztctl node show <id>                Show node details
+    ztctl node approve <id>             Approve pending node
+    ztctl node remove <id>              Remove node
+
+CLIENT COMMANDS (Mobile/Laptop VPN):
+    ztctl client list                   List all client devices
+    ztctl client add <name> [options]   Create new device
+        --type=<mobile|laptop|desktop>  Device type (default: mobile)
+        --user=<email>                  Owner user ID
+        --tunnel=<full|split>           Tunnel mode (default: full)
+        --expires=<days>                Expiration days (default: 30)
+    ztctl client show <id>              Show device details
+    ztctl client config <id>            Show WireGuard config
+    ztctl client qr <id>                Generate QR code in terminal
+    ztctl client revoke <id>            Revoke device access
+
+POLICY COMMANDS:
+    ztctl policy list                   List all policies
+    ztctl policy allow <src> <dst> --port=X --protocol=tcp
+    ztctl policy deny <src> <dst> --port=X --protocol=tcp
+    ztctl policy remove <id>            Remove policy
+
 EXAMPLES:
+    # Server nodes
     ztctl node list
+    ztctl node approve 5
+
+    # Client VPN devices
+    ztctl client add iPhone-John --type=mobile --user=john@company.com
+    ztctl client add MacBook-Work --type=laptop --tunnel=full --expires=90
+    ztctl client qr 1
+    ztctl client revoke 3
+
+    # Policies
     ztctl policy allow app db --port=5432 --protocol=tcp
     ztctl policy deny app db --protocol=icmp
-    ztctl sync
 
 ENVIRONMENT:
     HUB_URL       Hub API URL (default: http://localhost:8000)
-    ADMIN_TOKEN   Admin token
+    ADMIN_TOKEN   Admin authentication token
 EOF
 }
 
 # ============= MAIN =============
 case "${1:-help}" in
     node|nodes) shift; cmd_node "$@" ;;
+    client|clients|vpn) shift; cmd_client "$@" ;;
     policy|pol) shift; cmd_policy "$@" ;;
     peer|peers) shift; cmd_peer "$@" ;;
     sync) shift; cmd_sync "$@" ;;

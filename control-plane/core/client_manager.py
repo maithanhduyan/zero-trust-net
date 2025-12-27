@@ -77,9 +77,10 @@ class ClientManager:
         """
         network_prefix = ".".join(settings.OVERLAY_GATEWAY.split(".")[:-1])
 
-        # Find existing client IPs
+        # Find ALL existing client IPs (regardless of status)
+        # This prevents UNIQUE constraint violations from revoked devices
         existing_ips = db.query(ClientDevice.overlay_ip).filter(
-            ClientDevice.status != NodeStatus.REVOKED.value
+            ClientDevice.overlay_ip.isnot(None)
         ).all()
         existing_ips = {ip[0].split("/")[0] for ip in existing_ips if ip[0]}
 
