@@ -1,35 +1,42 @@
 #!/bin/bash
-
-# ==============================================================================
-#  ZERO TRUST PROJECT SCAFFOLDING (UV EDITION)
-# ==============================================================================
-
-set -e
-PROJECT_NAME="zero-trust-networking"
-
-#!/bin/bash
-
 # ==============================================================================
 #  ZERO TRUST CONTROL PLANE - AUTOMATED INSTALLER
 #  Repository: https://github.com/maithanhduyan/zero-trust-netwoking
 # ==============================================================================
+#
+#  Usage:
+#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netwoking/main/scripts/install.sh | sudo bash
+#
+#    Or download and run:
+#    chmod +x install.sh && sudo ./install.sh
+#
+# ==============================================================================
 
-set -e  # Dừng ngay nếu có lỗi xảy ra
+set -e
 
-# --- CẤU HÌNH MẶC ĐỊNH ---
-INSTALL_DIR="/opt/zero-trust-control-plane"
+# --- CẤU HÌNH ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || pwd)"
+INSTALL_DIR="${INSTALL_DIR:-/opt/zero-trust-control-plane}"
 REPO_URL="https://github.com/maithanhduyan/zero-trust-netwoking.git"
-BRANCH="main"
-COMPOSE_FILE="docker-compose.prod.yml"
+BRANCH="${BRANCH:-main}"
+WG_ADDRESS="10.10.0.1"
+WG_PORT="51820"
+WG_NETWORK="10.10.0.0/24"
 
 # --- MÀU SẮC ---
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
 RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-# =============================================================================
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+# --- HELPER FUNCTIONS ---
+log()     { echo -e "${BLUE}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[OK]${NC} $1"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 print_banner() {
     echo -e "${CYAN}"
@@ -43,200 +50,376 @@ print_banner() {
 ║   ███████╗███████╗██║  ██║╚██████╔╝       ██║   ██║  ██║╚██████╔╝███████║   ██║    ║
 ║   ╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝        ╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝    ║
 ║                                                                                    ║
-║           KHÔNG TIN BẤT KỲ KẾT NỐI NÀO, KỂ CẢ KẾT NỐI BÊN TRONG                    ║
+║              ZERO TRUST NETWORKING - CONTROL PLANE INSTALLER                       ║
+║                    "Never Trust, Always Verify"                                    ║
 ╚════════════════════════════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
 }
 
-print_success() { echo -e "${GREEN}✅ $1${NC}"; }
-print_error() { echo -e "${RED}❌ $1${NC}"; }
-print_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
-print_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
+print_phase() {
+    echo ""
+    echo -e "${MAGENTA}══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${MAGENTA} PHASE $1: $2${NC}"
+    echo -e "${MAGENTA}══════════════════════════════════════════════════════════════${NC}"
+}
 
-# --- HÀM HỖ TRỢ ---
-log() { echo -e "${BLUE}[INFO]${NC} $1"; }
-success() { echo -e "${GREEN}[OK]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
-
-
-print_banner
-# --- 1. KIỂM TRA MÔI TRƯỜNG ---
+# ==============================================================================
+# PHASE 0: CHECK ENVIRONMENT
+# ==============================================================================
 check_environment() {
-    log "1. Kiểm tra môi trường..."
+    print_phase "0" "KIỂM TRA MÔI TRƯỜNG"
 
-    # Kiểm tra quyền Root
+    # Check root
     if [ "$(id -u)" -ne 0 ]; then
         error "Script này cần quyền root. Vui lòng chạy với 'sudo'."
     fi
+    success "Đang chạy với quyền root"
 
-
-    # Kiểm tra OS (Khuyến nghị Ubuntu/Debian)
-
-
-    # Cài đặt các gói cơ bản cần thiết
-    apt-get update -qq >/dev/null 2>&1
-    apt-get install -y curl git openssl >/dev/null 2>&1
-    success "Môi trường đã sẵn sàng."
-}
-
-# Install Ansible
-install_ansible() {
-    log "Step 1/4: Cài đặt Ansible..."
-    if ! command -v ansible &> /dev/null; then
-        apt-get install -y -qq software-properties-common
-        add-apt-repository -y ppa:ansible/ansible > /dev/null 2>&1
-        apt-get update -qq
-        apt-get install -y -qq ansible
-        print_success "Ansible đã cài đặt"
-    else
-        print_success "Ansible đã có sẵn"
+    # Check OS
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        log "Hệ điều hành: $PRETTY_NAME"
     fi
+
+    # Check architecture
+    ARCH=$(uname -m)
+    log "Kiến trúc: $ARCH"
+
+    # Install base packages
+    log "Cài đặt các gói cơ bản..."
+    apt-get update -qq
+    apt-get install -y -qq curl git openssl ca-certificates gnupg lsb-release >/dev/null 2>&1
+    success "Các gói cơ bản đã sẵn sàng"
 }
-# --- 2. CÀI ĐẶT DOCKER ---
+
+# ==============================================================================
+# PHASE 1: INSTALL DEPENDENCIES
+# ==============================================================================
 install_docker() {
     log "Kiểm tra Docker..."
 
-    if ! command -v docker &> /dev/null; then
-        warn "Docker chưa được cài đặt. Đang tiến hành cài đặt tự động..."
-        curl -fsSL https://get.docker.com | sh
-        success "Docker đã được cài đặt thành công."
-    else
-        success "Docker đã tồn tại: $(docker --version)"
-    fi
-}
-
-# =============================================================================
-# STEP 2: Clone or update repo
-# =============================================================================
-
-# --- 3. TẢI / CẬP NHẬT MÃ NGUỒN ---
-setup_repository() {
-    log "3. Thiết lập mã nguồn..."
-
-    if [ -d "$INSTALL_DIR/.git" ]; then
-        log "Thư mục cài đặt đã tồn tại. Đang cập nhật code mới nhất..."
-        cd "$INSTALL_DIR"
-        git fetch origin
-        git reset --hard "origin/$BRANCH"
-        success "Đã cập nhật mã nguồn."
-    elif [ -d "$INSTALL_DIR" ]; then
-        error "Thư mục $INSTALL_DIR đã tồn tại nhưng không phải Git repo. Vui lòng xóa thủ công hoặc backup."
-    else
-        log "Đang clone repository về $INSTALL_DIR..."
-        git clone -b "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
-        cd "$INSTALL_DIR"
-        success "Đã clone mã nguồn thành công."
-    fi
-}
-
-# --- 4. CẤU HÌNH MÔI TRƯỜNG (.env) ---
-configure_env() {
-    log "4. Cấu hình biến môi trường..."
-
-    if [ -f ".env" ]; then
-        warn "File .env đã tồn tại. Sẽ giữ nguyên cấu hình cũ."
+    if command -v docker &> /dev/null; then
+        success "Docker đã có sẵn: $(docker --version)"
         return
     fi
 
-    echo "--------------------------------------------------"
-    echo "Hệ thống cần một số thông tin để thiết lập HTTPS."
-    echo "--------------------------------------------------"
+    log "Đang cài đặt Docker..."
+    curl -fsSL https://get.docker.com | sh
 
-    # Lấy IP Public tự động
-    PUBLIC_IP=$(curl -s ifconfig.me || echo "127.0.0.1")
+    # Start Docker
+    systemctl enable docker
+    systemctl start docker
 
-    # Hỏi Domain
-    read -p "Nhập Domain của bạn (Nhấn Enter để dùng IP $PUBLIC_IP): " INPUT_DOMAIN
-    DOMAIN_NAME=${INPUT_DOMAIN:-$PUBLIC_IP}
-
-    # Hỏi Email (Cần cho Let's Encrypt)
-    read -p "Nhập Email quản trị (để đăng ký SSL): " INPUT_EMAIL
-    ACME_EMAIL=${INPUT_EMAIL:-"admin@localhost"}
-
-    # Sinh mật khẩu ngẫu nhiên
-    log "Đang sinh mật khẩu an toàn..."
-    DB_PASSWORD=$(openssl rand -hex 16)
-    SECRET_KEY=$(openssl rand -hex 32)
-
-    # Ghi file .env
-    cat > .env <<EOF
-# --- General Config ---
-ENV=production
-API_PORT=8000
-SECRET_KEY=$SECRET_KEY
-
-# --- Caddy / SSL Config ---
-DOMAIN_NAME=$DOMAIN_NAME
-ACME_EMAIL=$ACME_EMAIL
-
-# --- Database Config ---
-DB_HOST=db
-DB_PORT=5432
-DB_USER=zt_admin
-DB_PASSWORD=$DB_PASSWORD
-DB_NAME=zt_control_plane
-EOF
-
-    success "Đã tạo file .env mới."
+    success "Docker đã cài đặt: $(docker --version)"
 }
 
-# =============================================================================
-# STEP 3: Run Ansible playbook
-# =============================================================================
+install_wireguard() {
+    log "Kiểm tra WireGuard..."
 
-deploy_containers() {
-    log "5. Triển khai Control Plane..."
+    if command -v wg &> /dev/null; then
+        success "WireGuard đã có sẵn: $(wg --version 2>&1 | head -1)"
+        return
+    fi
+
+    log "Đang cài đặt WireGuard..."
+    apt-get install -y -qq wireguard wireguard-tools >/dev/null 2>&1
+
+    success "WireGuard đã cài đặt"
+}
+
+install_uv() {
+    log "Kiểm tra uv (Python package manager)..."
+
+    if command -v uv &> /dev/null; then
+        success "uv đã có sẵn: $(uv --version)"
+        return
+    fi
+
+    log "Đang cài đặt uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # Add to PATH for current session
+    export PATH="$HOME/.local/bin:$PATH"
+
+    success "uv đã cài đặt"
+}
+
+install_dependencies() {
+    print_phase "1" "CÀI ĐẶT DEPENDENCIES"
+
+    install_docker
+    install_wireguard
+    install_uv
+
+    # Enable IP forwarding
+    log "Bật IP forwarding..."
+    cat > /etc/sysctl.d/99-wireguard.conf << EOF
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+EOF
+    sysctl -p /etc/sysctl.d/99-wireguard.conf >/dev/null 2>&1
+    success "IP forwarding đã bật"
+}
+
+# ==============================================================================
+# PHASE 2: SETUP WIREGUARD HUB
+# ==============================================================================
+setup_wireguard_hub() {
+    print_phase "2" "CẤU HÌNH WIREGUARD HUB"
+
+    # Create WireGuard directory
+    mkdir -p /etc/wireguard
+    chmod 700 /etc/wireguard
+
+    # Generate keys if not exists
+    if [ ! -f /etc/wireguard/private.key ]; then
+        log "Đang tạo keypair cho Hub..."
+        wg genkey | tee /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key
+        chmod 600 /etc/wireguard/private.key
+        success "Đã tạo keypair mới"
+    else
+        success "Keypair đã tồn tại"
+    fi
+
+    # Read keys
+    WG_PRIVATE_KEY=$(cat /etc/wireguard/private.key)
+    WG_PUBLIC_KEY=$(cat /etc/wireguard/public.key)
+
+    # Get public IP
+    PUBLIC_IP=$(curl -s ifconfig.me || curl -s icanhazip.com || echo "YOUR_PUBLIC_IP")
+
+    # Get default interface
+    DEFAULT_IFACE=$(ip route | grep default | awk '{print $5}' | head -1)
+
+    # Create WireGuard config
+    log "Tạo cấu hình WireGuard Hub..."
+    cat > /etc/wireguard/wg0.conf << EOF
+# ==============================================================================
+# WIREGUARD HUB CONFIGURATION
+# Generated by Zero Trust Installer - $(date -Iseconds)
+# ==============================================================================
+
+[Interface]
+PrivateKey = ${WG_PRIVATE_KEY}
+Address = ${WG_ADDRESS}/24
+ListenPort = ${WG_PORT}
+
+# NAT Masquerade - cho phép routing giữa các peers
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o ${DEFAULT_IFACE} -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o ${DEFAULT_IFACE} -j MASQUERADE
+
+# ==============================================================================
+# PEERS - Các node sẽ được thêm tự động bởi Control Plane
+# ==============================================================================
+EOF
+    chmod 600 /etc/wireguard/wg0.conf
+
+    # Start WireGuard
+    log "Khởi động WireGuard..."
+    systemctl enable wg-quick@wg0 >/dev/null 2>&1
+    systemctl restart wg-quick@wg0 || systemctl start wg-quick@wg0
+
+    # Verify
+    if wg show wg0 >/dev/null 2>&1; then
+        success "WireGuard Hub đang chạy trên ${WG_ADDRESS}:${WG_PORT}"
+    else
+        warn "Không thể khởi động WireGuard. Kiểm tra logs: journalctl -u wg-quick@wg0"
+    fi
+
+    # Open firewall port
+    if command -v ufw &> /dev/null; then
+        ufw allow ${WG_PORT}/udp comment "WireGuard VPN" >/dev/null 2>&1 || true
+    fi
+
+    # Save public info for later
+    echo "$WG_PUBLIC_KEY" > /etc/wireguard/hub_public_key
+    echo "$PUBLIC_IP" > /etc/wireguard/hub_endpoint
+}
+
+# ==============================================================================
+# PHASE 3: SETUP CONTROL PLANE
+# ==============================================================================
+setup_control_plane() {
+    print_phase "3" "CÀI ĐẶT CONTROL PLANE"
+
+    # Use current directory if it's the repo, otherwise use INSTALL_DIR
+    if [ -f "$SCRIPT_DIR/../control-plane/main.py" ]; then
+        INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+        log "Sử dụng thư mục hiện tại: $INSTALL_DIR"
+    elif [ -d "$INSTALL_DIR/.git" ]; then
+        log "Cập nhật repository..."
+        cd "$INSTALL_DIR"
+        git fetch origin
+        git reset --hard "origin/$BRANCH"
+    elif [ ! -d "$INSTALL_DIR" ]; then
+        log "Clone repository..."
+        git clone -b "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    fi
 
     cd "$INSTALL_DIR"
+    success "Mã nguồn tại: $INSTALL_DIR"
 
-    # Kiểm tra xem file docker-compose production có tồn tại không
-    if [ ! -f "$COMPOSE_FILE" ]; then
-        error "Không tìm thấy file $COMPOSE_FILE. Repo có thể bị lỗi."
+    # Read WireGuard info
+    WG_PUBLIC_KEY=$(cat /etc/wireguard/public.key 2>/dev/null || echo "REPLACE_WITH_HUB_PUBLIC_KEY")
+    PUBLIC_IP=$(cat /etc/wireguard/hub_endpoint 2>/dev/null || curl -s ifconfig.me || echo "127.0.0.1")
+
+    # Create .env file for control-plane
+    log "Tạo cấu hình Control Plane..."
+    cat > "$INSTALL_DIR/control-plane/.env" << EOF
+# ==============================================================================
+# ZERO TRUST CONTROL PLANE CONFIGURATION
+# Generated by install.sh - $(date -Iseconds)
+# ==============================================================================
+
+# Server
+HOST=0.0.0.0
+PORT=8000
+
+# Database
+DATABASE_URL=sqlite:///./zerotrust.db
+
+# WireGuard Hub Configuration
+HUB_PUBLIC_KEY=${WG_PUBLIC_KEY}
+HUB_ENDPOINT=${PUBLIC_IP}:${WG_PORT}
+OVERLAY_NETWORK=${WG_NETWORK}
+
+# Security
+SECRET_KEY=$(openssl rand -hex 32)
+EOF
+
+    # Update config.py with hub info
+    log "Cập nhật cấu hình Hub..."
+    if [ -f "$INSTALL_DIR/control-plane/config.py" ]; then
+        sed -i "s|REPLACE_WITH_HUB_PUBLIC_KEY|${WG_PUBLIC_KEY}|g" "$INSTALL_DIR/control-plane/config.py" 2>/dev/null || true
+        sed -i "s|hub.example.com:51820|${PUBLIC_IP}:${WG_PORT}|g" "$INSTALL_DIR/control-plane/config.py" 2>/dev/null || true
     fi
 
-    log "Đang build và khởi động Containers (Quá trình này có thể mất vài phút)..."
-
-    # Tắt version cũ nếu đang chạy
-    docker compose -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
-
-    # Chạy version mới
-    if docker compose -f "$COMPOSE_FILE" up -d --build; then
-        success "Containers đã khởi động thành công."
-    else
-        error "Lỗi khi khởi động Docker Compose."
-    fi
+    success "Control Plane đã cấu hình"
 }
 
+# ==============================================================================
+# PHASE 4: START SERVICES
+# ==============================================================================
+start_services() {
+    print_phase "4" "KHỞI ĐỘNG SERVICES"
+
+    cd "$INSTALL_DIR/control-plane"
+
+    # Install Python dependencies
+    log "Cài đặt Python dependencies..."
+
+    # Check if uv is available
+    if command -v uv &> /dev/null; then
+        uv sync 2>/dev/null || uv pip install -r pyproject.toml 2>/dev/null || {
+            # Fallback: install individually
+            uv pip install fastapi uvicorn sqlalchemy pydantic pyyaml aiofiles python-multipart
+        }
+    else
+        # Use pip if uv not available
+        pip3 install fastapi uvicorn sqlalchemy pydantic pyyaml aiofiles python-multipart
+    fi
+    success "Dependencies đã cài đặt"
+
+    # Create systemd service
+    log "Tạo systemd service..."
+    cat > /etc/systemd/system/zero-trust-control-plane.service << EOF
+[Unit]
+Description=Zero Trust Control Plane API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${INSTALL_DIR}/control-plane
+Environment="PATH=/root/.local/bin:/usr/local/bin:/usr/bin"
+ExecStart=/root/.local/bin/uv run uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Reload and start
+    systemctl daemon-reload
+    systemctl enable zero-trust-control-plane
+    systemctl restart zero-trust-control-plane
+
+    # Wait for service to start
+    log "Đợi Control Plane khởi động..."
+    sleep 3
+
+    # Check health
+    for i in {1..10}; do
+        if curl -s http://localhost:8000/health | grep -q "healthy"; then
+            success "Control Plane API đang chạy"
+            return
+        fi
+        sleep 1
+    done
+
+    warn "Control Plane chưa respond. Kiểm tra: journalctl -u zero-trust-control-plane -f"
+}
+
+# ==============================================================================
+# PHASE 5: VERIFY & SHOW SUMMARY
+# ==============================================================================
 show_summary() {
-    # Lấy thông tin từ .env
-    source .env
+    print_phase "5" "HOÀN TẤT"
+
+    # Get info
+    WG_PUBLIC_KEY=$(cat /etc/wireguard/public.key 2>/dev/null || echo "N/A")
+    PUBLIC_IP=$(cat /etc/wireguard/hub_endpoint 2>/dev/null || curl -s ifconfig.me || echo "N/A")
+    WG_STATUS=$(wg show wg0 2>/dev/null | head -5 || echo "Not running")
+    API_STATUS=$(curl -s http://localhost:8000/health 2>/dev/null | grep -o '"status":"[^"]*"' || echo "Not responding")
 
     echo ""
-    echo "=================================================="
-    echo -e "${GREEN}   CÀI ĐẶT CONTROL PLANE HOÀN TẤT! ${NC}"
-    echo "=================================================="
-    echo -e "📂 Thư mục cài đặt:  ${YELLOW}$INSTALL_DIR${NC}"
-    echo -e "🌍 Địa chỉ truy cập: ${YELLOW}https://$DOMAIN_NAME${NC} (hoặc http nếu dùng IP)"
-    echo -e "🔑 Database User:    ${YELLOW}$DB_USER${NC}"
-    echo -e "🔑 Database Pass:    ${YELLOW}$DB_PASSWORD${NC} (Đã lưu trong .env)"
-    echo "--------------------------------------------------"
-    echo "Để xem logs hệ thống:"
-    echo "  cd $INSTALL_DIR"
-    echo "  docker compose -f $COMPOSE_FILE logs -f"
-    echo "=================================================="
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║              ✅ ZERO TRUST CONTROL PLANE ĐÃ CÀI ĐẶT!                 ║${NC}"
+    echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${GREEN}║                                                                      ║${NC}"
+    echo -e "${GREEN}║${NC}  📂 Thư mục cài đặt: ${YELLOW}${INSTALL_DIR}${NC}"
+    echo -e "${GREEN}║${NC}  🌐 Control Plane:   ${YELLOW}http://${PUBLIC_IP}:8000${NC}"
+    echo -e "${GREEN}║${NC}  🔒 WireGuard Hub:   ${YELLOW}${PUBLIC_IP}:${WG_PORT}${NC}"
+    echo -e "${GREEN}║${NC}  🔑 Hub Public Key:  ${YELLOW}${WG_PUBLIC_KEY}${NC}"
+    echo -e "${GREEN}║${NC}  🌍 Overlay Network: ${YELLOW}${WG_NETWORK}${NC}"
+    echo -e "${GREEN}║                                                                      ║${NC}"
+    echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${GREEN}║${NC}  API Status: ${API_STATUS}"
+    echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${GREEN}║${NC}  ${CYAN}BƯỚC TIẾP THEO:${NC}"
+    echo -e "${GREEN}║${NC}  1. Kiểm tra API: curl http://localhost:8000/health"
+    echo -e "${GREEN}║${NC}  2. Xem logs: journalctl -u zero-trust-control-plane -f"
+    echo -e "${GREEN}║${NC}  3. Triển khai agents lên các node khác"
+    echo -e "${GREEN}║${NC}"
+    echo -e "${GREEN}║${NC}  ${CYAN}QUẢN LÝ SERVICES:${NC}"
+    echo -e "${GREEN}║${NC}  - Control Plane: systemctl {start|stop|restart} zero-trust-control-plane"
+    echo -e "${GREEN}║${NC}  - WireGuard:     systemctl {start|stop|restart} wg-quick@wg0"
+    echo -e "${GREEN}║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
 }
 
-# --- MAIN FLOW ---
-echo "=================================================="
-echo "   ZERO TRUST INSTALLER - v1.0"
-echo "=================================================="
+# ==============================================================================
+# MAIN
+# ==============================================================================
+main() {
+    print_banner
 
-check_environment
-#install_ansible
-#install_docker
-setup_repository
-#configure_env
-#deploy_containers
-#show_summary
+    echo ""
+    echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}  ZERO TRUST NETWORKING - Control Plane Installer v2.0${NC}"
+    echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    check_environment
+    install_dependencies
+    setup_wireguard_hub
+    setup_control_plane
+    start_services
+    show_summary
+}
+
+# Run
+main "$@"

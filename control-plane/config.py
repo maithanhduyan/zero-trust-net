@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     OVERLAY_GATEWAY: str = "10.0.0.1"
 
     # Hub Configuration
-    HUB_PUBLIC_KEY: str = "REPLACE_WITH_HUB_PUBLIC_KEY"
-    HUB_ENDPOINT: str = "hub.example.com:51820"
+    HUB_PUBLIC_KEY: str = "hM7m0pKxxdQzkwREnS3KM9tSK0LBTFlGq+xMSKptRSI="
+    HUB_ENDPOINT: str = "2400:d320:2261:7974::1:51820"
     HUB_LISTEN_PORT: int = 51820
 
     # DNS
