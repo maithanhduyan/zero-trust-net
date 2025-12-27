@@ -14,5 +14,5 @@
         "editor.defaultFormatter": "ms-python.python"
     },
     "remote.autoForwardPorts": true,
-    "chat.agent.maxRequests": 40
+    "chat.agent.maxRequests": 50
 }

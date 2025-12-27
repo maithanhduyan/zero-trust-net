@@ -68,7 +68,7 @@ wait_for_service() {
     local service=$1
     local timeout=${2:-30}
     local count=0
-    
+
     while ! service_is_running "$service"; do
         sleep 1
         count=$((count + 1))

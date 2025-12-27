@@ -60,17 +60,17 @@ echo ""
 if [ "$ROLLBACK" = "true" ]; then
     echo -e "${YELLOW}🔄 ROLLBACK MODE${NC}"
     echo ""
-    
+
     # List available backups
     if [ ! -d "$BACKUP_DIR" ]; then
         error "Không có backup nào. Thư mục $BACKUP_DIR không tồn tại."
     fi
-    
+
     BACKUPS=$(ls -t "$BACKUP_DIR" 2>/dev/null | head -10)
     if [ -z "$BACKUPS" ]; then
         error "Không có backup nào trong $BACKUP_DIR"
     fi
-    
+
     echo "Các bản backup có sẵn:"
     echo ""
     i=1
@@ -79,26 +79,26 @@ if [ "$ROLLBACK" = "true" ]; then
         i=$((i+1))
     done
     echo ""
-    
+
     read -p "Chọn backup để restore (1-10): " choice
-    
+
     SELECTED=$(echo "$BACKUPS" | sed -n "${choice}p")
     if [ -z "$SELECTED" ]; then
         error "Lựa chọn không hợp lệ"
     fi
-    
+
     log "Đang restore từ: $SELECTED"
-    
+
     # Restore policies
     cp -r "${BACKUP_DIR}/${SELECTED}/policies/"* "$POLICY_DIR/"
-    
+
     # Trigger sync to all nodes
     log "Trigger sync tới tất cả nodes..."
     curl -s -X POST "${HUB_URL}/api/v1/admin/policies/sync" \
         -H "X-Admin-Token: ${ADMIN_TOKEN}" \
         -H "Content-Type: application/json" \
         -d '{"force": true}' 2>/dev/null || warn "Không thể trigger sync"
-    
+
     success "Đã rollback về: $SELECTED"
     exit 0
 fi
@@ -176,7 +176,7 @@ for policy_file in $POLICY_FILES; do
     if [ -f "$policy_file" ]; then
         POLICY_NAME=$(basename "$policy_file" .yaml)
         POLICY_CONTENT=$(cat "$policy_file")
-        
+
         if [ "$DRY_RUN" = "true" ]; then
             echo -e "${YELLOW}[DRY-RUN]${NC} Would push: $POLICY_NAME"
         else
@@ -184,7 +184,7 @@ for policy_file in $POLICY_FILES; do
                 -H "X-Admin-Token: ${ADMIN_TOKEN}" \
                 -H "Content-Type: application/json" \
                 -d "{\"name\": \"${POLICY_NAME}\", \"content\": $(echo "$POLICY_CONTENT" | jq -Rs .)}" 2>&1)
-            
+
             if echo "$RESPONSE" | grep -q '"success":true\|"status":"ok"'; then
                 echo -e "  ${GREEN}✓${NC} $POLICY_NAME pushed"
             else
@@ -208,20 +208,20 @@ else
     NODES=$(curl -s "${HUB_URL}/api/v1/admin/nodes" \
         -H "X-Admin-Token: ${ADMIN_TOKEN}" 2>/dev/null | \
         jq -r '.nodes[]? | select(.status=="active") | "\(.hostname) (\(.overlay_ip))"' 2>/dev/null)
-    
+
     if [ -n "$NODES" ]; then
         echo "Active nodes:"
         echo "$NODES" | while read node; do
             echo -e "  ${GREEN}●${NC} $node"
         done
         echo ""
-        
+
         # Trigger policy sync
         log "Triggering policy sync..."
         SYNC_RESULT=$(curl -s -X POST "${HUB_URL}/api/v1/admin/policies/sync" \
             -H "X-Admin-Token: ${ADMIN_TOKEN}" \
             -H "Content-Type: application/json" 2>&1)
-        
+
         if echo "$SYNC_RESULT" | grep -q "error"; then
             warn "Sync API chưa implemented. Agents sẽ tự sync trong vòng 60s."
         else

@@ -1,0 +1,269 @@
+#!/bin/bash
+# ==============================================================================
+# ZTCTL - Zero Trust Network Control CLI
+# Admin tool for managing Zero Trust Network
+# ==============================================================================
+
+set -e
+
+ZTCTL_VERSION="1.0.0"
+HUB_URL="${HUB_URL:-http://localhost:8000}"
+ADMIN_TOKEN="${ADMIN_TOKEN:-change-me-admin-secret}"
+CONFIG_FILE="${ZTCTL_CONFIG:-/etc/zerotrust/ztctl.conf}"
+
+[ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
+
+# Colors
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+
+print_error() { echo -e "${RED}Error:${NC} $1" >&2; }
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_info() { echo -e "${BLUE}ℹ${NC} $1"; }
+
+api_call() {
+    local method=$1 endpoint=$2 data=$3
+    local url="${HUB_URL}/api/v1${endpoint}"
+    local args=("-s" "-X" "$method" "-H" "X-Admin-Token: ${ADMIN_TOKEN}" "-H" "Content-Type: application/json")
+    [ -n "$data" ] && args+=("-d" "$data")
+    curl "${args[@]}" "$url" 2>&1
+}
+
+check_jq() { command -v jq &>/dev/null || { print_error "jq required: apt install jq"; exit 1; }; }
+
+# ============= NODE COMMANDS =============
+cmd_node() {
+    local subcmd=${1:-list}; shift || true
+    case "$subcmd" in
+        list|ls) node_list "$@" ;;
+        show|get) node_show "$@" ;;
+        approve) node_approve "$@" ;;
+        remove|rm) node_remove "$@" ;;
+        *) echo "Usage: ztctl node <list|show|approve|remove>"; exit 1 ;;
+    esac
+}
+
+node_list() {
+    local response=$(api_call GET "/admin/nodes")
+    check_jq
+    echo -e "\n${CYAN}━━━ REGISTERED NODES ━━━${NC}\n"
+    printf "${BOLD}%-4s %-20s %-8s %-15s %-10s${NC}\n" "ID" "HOSTNAME" "ROLE" "OVERLAY IP" "STATUS"
+    echo "$response" | jq -r '.nodes // . | .[] | "\(.id)\t\(.hostname)\t\(.role)\t\(.overlay_ip // "N/A")\t\(.status)"' 2>/dev/null | while IFS=$'\t' read -r id hostname role overlay_ip status; do
+        case "$status" in
+            active) sc="${GREEN}●${NC} active" ;;
+            pending) sc="${YELLOW}○${NC} pending" ;;
+            *) sc="$status" ;;
+        esac
+        printf "%-4s %-20s %-8s %-15s %-10b\n" "$id" "$hostname" "$role" "$overlay_ip" "$sc"
+    done
+    echo ""
+}
+
+node_show() { [ -z "$1" ] && { print_error "Usage: ztctl node show <id>"; exit 1; }; api_call GET "/admin/nodes/$1" | jq '.'; }
+node_approve() { [ -z "$1" ] && { print_error "Usage: ztctl node approve <id>"; exit 1; }; api_call PATCH "/admin/nodes/$1" '{"status":"active"}'; print_success "Node $1 approved"; }
+node_remove() { [ -z "$1" ] && { print_error "Usage: ztctl node remove <id>"; exit 1; }; api_call DELETE "/admin/nodes/$1"; print_success "Node $1 removed"; }
+
+# ============= POLICY COMMANDS =============
+cmd_policy() {
+    local subcmd=${1:-list}; shift || true
+    case "$subcmd" in
+        list|ls) policy_list "$@" ;;
+        allow) policy_create "allow" "$@" ;;
+        deny|block) policy_create "deny" "$@" ;;
+        remove|rm) policy_remove "$@" ;;
+        *)
+            echo "Usage: ztctl policy <list|allow|deny|remove>"
+            echo ""
+            echo "Examples:"
+            echo "  ztctl policy allow app db --port=5432 --protocol=tcp"
+            echo "  ztctl policy deny app db --port=22 --protocol=tcp"
+            echo "  ztctl policy deny app db --protocol=icmp  # Block ICMP (ping)"
+            echo ""
+            echo "Note: --port is required (except for ICMP)"
+            exit 1
+            ;;
+    esac
+}
+
+policy_list() {
+    local response=$(api_call GET "/admin/policies")
+    check_jq
+    echo -e "\n${CYAN}━━━ ACCESS POLICIES ━━━${NC}\n"
+    printf "${BOLD}%-4s %-25s %-8s %-8s %-8s %-6s %-8s${NC}\n" "ID" "NAME" "SRC" "DST" "PROTO" "PORT" "ACTION"
+    echo "$response" | jq -r '.policies // . | .[] | "\(.id // "-")\t\(.name)\t\(.src_role // "*")\t\(.dst_role // "*")\t\(.protocol // "any")\t\(.port // "*")\t\(.action)"' 2>/dev/null | while IFS=$'\t' read -r id name src dst proto port action; do
+        case "$action" in
+            ACCEPT|allow) ac="${GREEN}ACCEPT${NC}" ;;
+            DROP|deny) ac="${RED}DROP${NC}" ;;
+            REJECT) ac="${RED}REJECT${NC}" ;;
+            LOG) ac="${YELLOW}LOG${NC}" ;;
+            *) ac="$action" ;;
+        esac
+        printf "%-4s %-25s %-8s %-8s %-8s %-6s %-8b\n" "$id" "${name:0:25}" "$src" "$dst" "$proto" "$port" "$ac"
+    done
+    echo ""
+}
+
+policy_create() {
+    local cli_action=$1 src=$2 dst=$3; shift 3 || { print_error "Usage: ztctl policy $cli_action <src> <dst> --port=X [--protocol=X]"; exit 1; }
+    local port="" protocol="tcp" priority=100
+    for arg in "$@"; do
+        case $arg in
+            --port=*) port="${arg#*=}" ;;
+            --protocol=*) protocol="${arg#*=}" ;;
+            --priority=*) priority="${arg#*=}" ;;
+        esac
+    done
+
+    # Map allow/deny to API action values
+    local api_action
+    case "$cli_action" in
+        allow) api_action="ACCEPT" ;;
+        deny|block) api_action="DROP" ;;
+        reject) api_action="REJECT" ;;
+        log) api_action="LOG" ;;
+        *) api_action="ACCEPT" ;;
+    esac
+
+    # For ICMP protocol, port is not needed - use port 0
+    if [ "$protocol" = "icmp" ]; then
+        port=0
+    elif [ -z "$port" ]; then
+        print_error "Port is required. Use --port=<port_number>"
+        echo "  Example: ztctl policy allow app db --port=5432"
+        exit 1
+    fi
+
+    local name="${cli_action}-${src}-to-${dst}"
+    [ "$port" != "0" ] && name="${name}-${port}"
+
+    local json="{\"name\":\"$name\",\"src_role\":\"$src\",\"dst_role\":\"$dst\",\"protocol\":\"$protocol\",\"port\":$port,\"action\":\"$api_action\",\"priority\":$priority,\"enabled\":true}"
+    local response=$(api_call POST "/admin/policies" "$json")
+    if echo "$response" | grep -q '"error"'; then
+        print_error "$(echo "$response" | jq -r '.error // .detail // .message')"
+        [ -n "$ZTCTL_DEBUG" ] && echo "Response: $response"
+        exit 1
+    fi
+    print_success "Policy created: $name"
+    echo "  $src → $dst | $protocol:$port | $api_action"
+    print_info "Run 'ztctl sync' to apply immediately"
+}
+
+policy_remove() { [ -z "$1" ] && { print_error "Usage: ztctl policy remove <id>"; exit 1; }; api_call DELETE "/admin/policies/$1"; print_success "Policy $1 removed"; }
+
+# ============= PEER COMMANDS =============
+cmd_peer() {
+    local subcmd=${1:-list}; shift || true
+    case "$subcmd" in
+        list|ls) peer_list ;;
+        add) peer_add "$@" ;;
+        remove|rm) peer_remove "$@" ;;
+        *) echo "Usage: ztctl peer <list|add|remove>"; exit 1 ;;
+    esac
+}
+
+peer_list() {
+    local response=$(api_call GET "/admin/wireguard/peers")
+    check_jq
+    echo -e "\n${CYAN}━━━ WIREGUARD PEERS ━━━${NC}\n"
+    printf "${BOLD}%-46s %-18s %-22s${NC}\n" "PUBLIC KEY" "ALLOWED IPS" "ENDPOINT"
+    echo "$response" | jq -r '.peers[] | "\(.public_key)\t\(.allowed_ips)\t\(.endpoint // "N/A")"' 2>/dev/null | while IFS=$'\t' read -r pk ip ep; do
+        printf "%-46s %-18s %-22s\n" "${pk:0:44}.." "$ip" "${ep:0:22}"
+    done
+    echo ""
+}
+
+peer_add() {
+    [ -z "$1" ] || [ -z "$2" ] && { print_error "Usage: ztctl peer add <pubkey> <allowed_ips>"; exit 1; }
+    api_call POST "/admin/wireguard/add-peer" "{\"public_key\":\"$1\",\"allowed_ips\":\"$2\"}"
+    print_success "Peer added: $2"
+}
+
+peer_remove() {
+    [ -z "$1" ] && { print_error "Usage: ztctl peer remove <pubkey>"; exit 1; }
+    api_call DELETE "/admin/wireguard/peers/$(echo -n "$1" | jq -sRr @uri)"
+    print_success "Peer removed"
+}
+
+# ============= SYNC COMMAND =============
+cmd_sync() {
+    echo -e "\n${CYAN}━━━ TRIGGERING POLICY SYNC ━━━${NC}\n"
+    local response=$(api_call POST "/admin/policies/sync" '{"force":true}')
+    if echo "$response" | grep -q '"error"'; then
+        print_info "Sync API not implemented. Agents auto-sync in 60s."
+        echo "  Force on node: systemctl restart zero-trust-agent"
+    else
+        print_success "Sync triggered"
+    fi
+    echo ""
+}
+
+# ============= STATUS COMMAND =============
+cmd_status() {
+    echo -e "\n${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ZERO TRUST CLUSTER STATUS                       ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${BOLD}Hub API:${NC} $HUB_URL"
+    local health=$(curl -s --max-time 3 "${HUB_URL}/health" 2>/dev/null)
+    if echo "$health" | grep -q '"status"'; then
+        echo -e "  Status: ${GREEN}● Online${NC}"
+    else
+        echo -e "  Status: ${RED}● Offline${NC}"
+    fi
+
+    echo -e "\n${BOLD}WireGuard:${NC}"
+    if wg show wg0 &>/dev/null; then
+        echo -e "  Status: ${GREEN}● Running${NC}"
+        echo "  Peers:  $(wg show wg0 peers | wc -l)"
+    else
+        echo -e "  Status: ${YELLOW}○ Not local${NC}"
+    fi
+
+    echo -e "\n${BOLD}Nodes:${NC}"
+    local nodes=$(api_call GET "/admin/nodes" 2>/dev/null)
+    check_jq
+    local total=$(echo "$nodes" | jq '.nodes // . | length' 2>/dev/null || echo 0)
+    local active=$(echo "$nodes" | jq '[(.nodes // .)[] | select(.status=="active")] | length' 2>/dev/null || echo 0)
+    echo "  Total: $total | Active: $active"
+    echo ""
+}
+
+# ============= HELP =============
+show_help() {
+    cat << 'EOF'
+ZTCTL - Zero Trust Network Control CLI
+
+USAGE:
+    ztctl <command> [subcommand] [options]
+
+COMMANDS:
+    node        Manage nodes (list, show, approve, remove)
+    policy      Manage policies (list, allow, deny, remove)
+    peer        Manage WireGuard peers (list, add, remove)
+    sync        Trigger policy sync to all nodes
+    status      Show cluster status
+    help        Show this help
+
+EXAMPLES:
+    ztctl node list
+    ztctl policy allow app db --port=5432 --protocol=tcp
+    ztctl policy deny app db --protocol=icmp
+    ztctl sync
+
+ENVIRONMENT:
+    HUB_URL       Hub API URL (default: http://localhost:8000)
+    ADMIN_TOKEN   Admin token
+EOF
+}
+
+# ============= MAIN =============
+case "${1:-help}" in
+    node|nodes) shift; cmd_node "$@" ;;
+    policy|pol) shift; cmd_policy "$@" ;;
+    peer|peers) shift; cmd_peer "$@" ;;
+    sync) shift; cmd_sync "$@" ;;
+    status|st) cmd_status ;;
+    help|--help|-h) show_help ;;
+    version|-v) echo "ztctl $ZTCTL_VERSION" ;;
+    *) print_error "Unknown: $1"; echo "Run 'ztctl help'"; exit 1 ;;
+esac

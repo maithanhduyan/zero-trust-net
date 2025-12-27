@@ -252,11 +252,18 @@ class PolicyEngine:
             return False, f"Invalid dst_role. Must be one of: {valid_roles}"
 
         port = policy_data.get("port", 0)
-        if not (1 <= port <= 65535):
-            return False, "Port must be between 1 and 65535"
+        protocol = policy_data.get("protocol", "tcp").lower()
+
+        # Allow port=0 for ICMP and any protocols
+        if protocol in ["icmp", "any"]:
+            if port != 0 and port is not None:
+                # For ICMP, port should be 0
+                pass  # Allow any port value, it will be ignored
+        elif not (1 <= (port or 0) <= 65535):
+            return False, "Port must be between 1 and 65535 (or 0 for ICMP)"
 
         valid_protocols = ["tcp", "udp", "icmp", "any"]
-        if policy_data.get("protocol", "tcp") not in valid_protocols:
+        if protocol not in valid_protocols:
             return False, f"Invalid protocol. Must be one of: {valid_protocols}"
 
         return True, "Valid"

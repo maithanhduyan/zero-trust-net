@@ -50,12 +50,12 @@ class PolicyCreate(BaseModel):
         description="Destination role (who receives the connection)",
         examples=["db", "app", "*"]
     )
-    port: int = Field(
-        ...,
-        ge=1,
+    port: Optional[int] = Field(
+        None,
+        ge=0,
         le=65535,
-        description="Destination port",
-        examples=[5432, 22, 443]
+        description="Destination port (0 or None for ICMP/any)",
+        examples=[5432, 22, 443, 0]
     )
     protocol: Protocol = Field(
         default=Protocol.TCP,
@@ -75,6 +75,16 @@ class PolicyCreate(BaseModel):
         default=True,
         description="Whether the policy is active"
     )
+
+    @field_validator('port')
+    @classmethod
+    def validate_port(cls, v, info):
+        """Validate port - 0 or None allowed for ICMP"""
+        if v is None or v == 0:
+            return 0  # Use 0 for "any port" / ICMP
+        if v < 1 or v > 65535:
+            raise ValueError('Port must be between 1 and 65535 (or 0 for ICMP)')
+        return v
 
     @field_validator('src_role', 'dst_role')
     @classmethod
@@ -123,7 +133,7 @@ class PolicyResponse(BaseModel):
     description: Optional[str] = None
     src_role: str
     dst_role: str
-    port: int
+    port: Optional[int] = 0
     protocol: str
     action: str
     priority: int
