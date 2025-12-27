@@ -29,7 +29,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/zero-trust-agent}"
 REPO_URL="https://github.com/maithanhduyan/zero-trust-netwoking.git"
-BRANCH="${BRANCH:-main}"
+BRANCH="${BRANCH:-master}"
 
 # Required environment variables (must be set by user)
 HUB_URL="${HUB_URL:-}"
