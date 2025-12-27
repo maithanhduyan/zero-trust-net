@@ -46,16 +46,16 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60
 
     # === WireGuard Network ===
-    OVERLAY_NETWORK: str = "10.0.0.0/24"
-    OVERLAY_GATEWAY: str = "10.0.0.1"
+    OVERLAY_NETWORK: str = "10.10.0.0/24"
+    OVERLAY_GATEWAY: str = "10.10.0.1"
 
     # Hub Configuration
     HUB_PUBLIC_KEY: str = "hM7m0pKxxdQzkwREnS3KM9tSK0LBTFlGq+xMSKptRSI="
-    HUB_ENDPOINT: str = "2400:d320:2261:7974::1:51820"
+    HUB_ENDPOINT: str = "5.104.82.252:51820"
     HUB_LISTEN_PORT: int = 51820
 
     # DNS
-    DNS_SERVERS: List[str] = ["10.0.0.1", "1.1.1.1"]
+    DNS_SERVERS: List[str] = ["10.10.0.1", "1.1.1.1"]
 
     # === Node Registration ===
     REQUIRE_REGISTRATION_TOKEN: bool = False

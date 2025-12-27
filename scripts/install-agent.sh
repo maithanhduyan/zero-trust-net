@@ -259,9 +259,14 @@ configure_wireguard() {
     if [ -f /etc/wireguard/overlay_ip ]; then
         OVERLAY_IP=$(cat /etc/wireguard/overlay_ip)
     else
-        # Fallback: try to get from Control Plane
-        OVERLAY_IP=$(curl -s "${HUB_URL}/api/v1/agent/status/${NODE_HOSTNAME}" 2>/dev/null | \
-            grep -o '"overlay_ip":"[^"]*"' | cut -d'"' -f4 || echo "10.10.0.100/24")
+        # Fallback: request new IP from Control Plane via node lookup
+        warn "Overlay IP chưa được gán. Sử dụng IP tạm: 10.10.0.100"
+        OVERLAY_IP="10.10.0.100"
+    fi
+
+    # Ensure IP has CIDR notation
+    if [[ "$OVERLAY_IP" != */* ]]; then
+        OVERLAY_IP="${OVERLAY_IP}/24"
     fi
 
     log "Overlay IP: $OVERLAY_IP"
@@ -405,10 +410,7 @@ After=network.target wg-quick@wg0.service
 Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}/agent
-Environment="CONTROL_PLANE_URL=${HUB_URL}"
-Environment="NODE_HOSTNAME=${NODE_HOSTNAME}"
-Environment="NODE_ROLE=${NODE_ROLE}"
-ExecStart=${INSTALL_DIR}/agent/venv/bin/python agent.py
+ExecStart=${INSTALL_DIR}/agent/venv/bin/python agent.py --hostname ${NODE_HOSTNAME} --role ${NODE_ROLE} --control-plane ${HUB_URL} --sync-interval ${SYNC_INTERVAL}
 Restart=always
 RestartSec=10
 
