@@ -429,3 +429,264 @@ class ClientDevice(Base):
     def is_expired(self) -> bool:
         """Check if device config has expired"""
         return self.expires_at and datetime.utcnow() > self.expires_at
+
+
+# =============================================================================
+# Event Store - Persistent Event History
+# =============================================================================
+
+class EventStore(Base):
+    """
+    Event Store table - persistent storage for all domain events
+
+    Enables:
+    - Audit trail and compliance
+    - Event replay for debugging
+    - Analytics and monitoring
+    - System state reconstruction
+    """
+    __tablename__ = "event_store"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    # Event identification
+    event_id = Column(String(36), unique=True, nullable=False, index=True,
+                      comment="UUID of the event")
+    event_type = Column(String(50), nullable=False, index=True,
+                        comment="Event type: NodeRegistered, PolicyUpdated, etc.")
+
+    # Aggregate information (for event sourcing)
+    aggregate_type = Column(String(50), nullable=True, index=True,
+                            comment="Aggregate type: Node, Policy, Client, etc.")
+    aggregate_id = Column(String(100), nullable=True, index=True,
+                          comment="ID of the aggregate this event belongs to")
+
+    # Event data
+    payload = Column(Text, nullable=False,
+                     comment="JSON-encoded event payload")
+    source = Column(String(50), nullable=True,
+                    comment="Component that emitted the event")
+
+    # Metadata
+    version = Column(Integer, default=1, nullable=False,
+                     comment="Event schema version for evolution")
+    correlation_id = Column(String(36), nullable=True, index=True,
+                            comment="ID to correlate related events")
+    causation_id = Column(String(36), nullable=True,
+                          comment="ID of the event that caused this one")
+
+    # Processing status
+    processed = Column(Boolean, default=False, nullable=False,
+                       comment="Whether event has been processed by all handlers")
+    process_count = Column(Integer, default=0, nullable=False,
+                           comment="Number of handlers that processed this event")
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Indexes for common queries
+    __table_args__ = (
+        Index('ix_event_store_type_created', 'event_type', 'created_at'),
+        Index('ix_event_store_aggregate', 'aggregate_type', 'aggregate_id', 'created_at'),
+        Index('ix_event_store_correlation', 'correlation_id'),
+    )
+
+    def __repr__(self):
+        return f"<EventStore(id={self.id}, type={self.event_type}, aggregate={self.aggregate_type}/{self.aggregate_id})>"
+
+
+# =============================================================================
+# User & Group Access Control
+# =============================================================================
+
+class User(Base):
+    """
+    User table - represents individual users for access control
+
+    Users can:
+    - Own client devices (mobile/laptop VPN)
+    - Belong to groups
+    - Have individual access policies
+    """
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    # Identity
+    user_id = Column(String(100), unique=True, nullable=False, index=True,
+                     comment="Unique user identifier (email or username)")
+    display_name = Column(String(100), nullable=True,
+                          comment="Human-readable display name")
+    email = Column(String(255), unique=True, nullable=True, index=True,
+                   comment="User email address")
+
+    # Authentication (optional - can use external IdP)
+    password_hash = Column(String(255), nullable=True,
+                           comment="Hashed password (if using local auth)")
+    external_id = Column(String(255), nullable=True, index=True,
+                         comment="ID from external identity provider")
+    auth_provider = Column(String(50), nullable=True,
+                           comment="Auth provider: local, google, okta, etc.")
+
+    # Status
+    status = Column(String(20), default="active", nullable=False, index=True,
+                    comment="User status: active, suspended, disabled")
+
+    # Metadata
+    department = Column(String(100), nullable=True,
+                        comment="Department or team")
+    job_title = Column(String(100), nullable=True,
+                       comment="Job title/role in organization")
+    attributes = Column(Text, nullable=True,
+                        comment="JSON-encoded custom attributes")
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_login = Column(DateTime, nullable=True,
+                        comment="Last successful login")
+
+    # Indexes
+    __table_args__ = (
+        Index('ix_users_status', 'status'),
+        Index('ix_users_department', 'department'),
+    )
+
+    def __repr__(self):
+        return f"<User(id={self.id}, user_id={self.user_id}, status={self.status})>"
+
+
+class Group(Base):
+    """
+    Group table - represents user groups for access control
+
+    Groups provide:
+    - Organizational structure (teams, departments)
+    - Shared access policies
+    - Simplified permission management
+    """
+    __tablename__ = "groups"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    # Identity
+    name = Column(String(100), unique=True, nullable=False, index=True,
+                  comment="Unique group name")
+    display_name = Column(String(100), nullable=True,
+                          comment="Human-readable display name")
+    description = Column(Text, nullable=True,
+                         comment="Group description")
+
+    # Hierarchy
+    parent_group_id = Column(Integer, nullable=True, index=True,
+                             comment="Parent group ID for nested groups")
+
+    # Type
+    group_type = Column(String(50), default="team", nullable=False,
+                        comment="Group type: team, department, role, custom")
+
+    # Status
+    status = Column(String(20), default="active", nullable=False,
+                    comment="Group status: active, disabled")
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<Group(id={self.id}, name={self.name})>"
+
+
+class UserGroupMembership(Base):
+    """
+    User-Group membership table - links users to groups
+    """
+    __tablename__ = "user_group_memberships"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    user_id = Column(Integer, nullable=False, index=True,
+                     comment="Reference to users.id")
+    group_id = Column(Integer, nullable=False, index=True,
+                      comment="Reference to groups.id")
+
+    # Role within group
+    role = Column(String(50), default="member", nullable=False,
+                  comment="Role in group: member, admin, owner")
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Unique constraint
+    __table_args__ = (
+        Index('ix_user_group_unique', 'user_id', 'group_id', unique=True),
+    )
+
+
+class UserAccessPolicy(Base):
+    """
+    User Access Policy table - defines what resources users/groups can access
+
+    Implements Zero Trust principle for user-level access:
+    - Domain/URL access control
+    - Zone/network segment access
+    - Time-based access
+    - Device restrictions
+    """
+    __tablename__ = "user_access_policies"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    # Policy identification
+    name = Column(String(100), nullable=False,
+                  comment="Policy name")
+    description = Column(Text, nullable=True,
+                         comment="Policy description")
+
+    # Subject (who this policy applies to)
+    subject_type = Column(String(20), nullable=False, index=True,
+                          comment="Subject type: user, group, all")
+    subject_id = Column(Integer, nullable=True, index=True,
+                        comment="User or Group ID (NULL for 'all')")
+
+    # Resource (what is being accessed)
+    resource_type = Column(String(50), nullable=False, index=True,
+                           comment="Resource type: domain, ip_range, zone, service")
+    resource_value = Column(String(255), nullable=False,
+                            comment="Resource value: *.example.com, 10.0.0.0/24, production, etc.")
+
+    # Access control
+    action = Column(String(20), default="allow", nullable=False,
+                    comment="Action: allow, deny, require_mfa")
+
+    # Conditions (optional)
+    conditions = Column(Text, nullable=True,
+                        comment="JSON-encoded conditions (time, device_type, location, etc.)")
+
+    # Priority and state
+    priority = Column(Integer, default=100, nullable=False,
+                      comment="Rule priority (1-1000, lower = higher priority)")
+    enabled = Column(Boolean, default=True, nullable=False,
+                     comment="Whether policy is active")
+
+    # Time-based access
+    valid_from = Column(DateTime, nullable=True,
+                        comment="Policy valid from (NULL = always)")
+    valid_until = Column(DateTime, nullable=True,
+                         comment="Policy valid until (NULL = forever)")
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_by = Column(String(100), nullable=True,
+                        comment="Admin who created this policy")
+
+    # Indexes
+    __table_args__ = (
+        Index('ix_user_policy_subject', 'subject_type', 'subject_id'),
+        Index('ix_user_policy_resource', 'resource_type', 'resource_value'),
+        Index('ix_user_policy_enabled_priority', 'enabled', 'priority'),
+    )
+
+    def __repr__(self):
+        return f"<UserAccessPolicy(id={self.id}, name={self.name}, {self.subject_type}:{self.subject_id} -> {self.resource_type}:{self.resource_value})>"

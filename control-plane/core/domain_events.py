@@ -58,6 +58,19 @@ class EventTypes:
     UNAUTHORIZED_ACCESS = "UnauthorizedAccess"
     AUTHENTICATION_FAILED = "AuthenticationFailed"
 
+    # User events
+    USER_CREATED = "UserCreated"
+    USER_UPDATED = "UserUpdated"
+    USER_SUSPENDED = "UserSuspended"
+    USER_DELETED = "UserDeleted"
+
+    # Group events
+    GROUP_CREATED = "GroupCreated"
+    GROUP_UPDATED = "GroupUpdated"
+    GROUP_DELETED = "GroupDeleted"
+    USER_ADDED_TO_GROUP = "UserAddedToGroup"
+    USER_REMOVED_FROM_GROUP = "UserRemovedFromGroup"
+
     # Configuration events
     CONFIG_VERSION_INCREMENTED = "ConfigVersionIncremented"
     WIREGUARD_PEER_ADDED = "WireGuardPeerAdded"

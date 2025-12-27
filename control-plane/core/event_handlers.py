@@ -6,6 +6,7 @@ These handlers are decoupled from event publishers.
 Each handler has a single responsibility.
 """
 
+import json
 import logging
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -15,6 +16,64 @@ from .domain_events import EventTypes
 from database.session import get_db_session
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Event Store Handler - Persist all events
+# =============================================================================
+
+def persist_event(event: Event) -> None:
+    """
+    Persist event to EventStore table for audit trail and replay
+
+    This handler runs for ALL events with HIGH priority.
+    """
+    from database.models import EventStore
+
+    db = get_db_session()
+    try:
+        # Determine aggregate type and ID from payload
+        aggregate_type = None
+        aggregate_id = None
+
+        if "node_id" in event.payload:
+            aggregate_type = "Node"
+            aggregate_id = str(event.payload["node_id"])
+        elif "device_id" in event.payload:
+            aggregate_type = "ClientDevice"
+            aggregate_id = str(event.payload["device_id"])
+        elif "policy_id" in event.payload:
+            aggregate_type = "Policy"
+            aggregate_id = str(event.payload["policy_id"])
+        elif "group_id" in event.payload and event.event_type.startswith("Group"):
+            aggregate_type = "Group"
+            aggregate_id = str(event.payload["group_id"])
+        elif "user_id" in event.payload and event.event_type.startswith("User"):
+            aggregate_type = "User"
+            aggregate_id = str(event.payload["user_id"])
+
+        stored_event = EventStore(
+            event_id=event.event_id,
+            event_type=event.event_type,
+            aggregate_type=aggregate_type,
+            aggregate_id=aggregate_id,
+            payload=json.dumps(event.payload),
+            source=event.source,
+            version=event.version,
+            processed=True,
+            process_count=1
+        )
+
+        db.add(stored_event)
+        db.commit()
+
+        logger.debug(f"Event persisted: {event.event_type} (id={event.event_id})")
+
+    except Exception as e:
+        logger.error(f"Failed to persist event: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 # =============================================================================
@@ -34,14 +93,6 @@ def audit_handler(event: Event) -> None:
         f"source={event.source} | "
         f"payload={event.payload}"
     )
-
-    # TODO: In production, also store to EventStore table
-    # db = get_db_session()
-    # try:
-    #     store_event(db, event)
-    #     db.commit()
-    # finally:
-    #     db.close()
 
 
 # =============================================================================
@@ -226,8 +277,36 @@ def register_event_handlers() -> None:
     """
     logger.info("Registering event handlers...")
 
-    # Audit handler for ALL events (using wildcard pattern in future)
-    # For now, register for specific important events
+    # Event persistence handler - store ALL events to EventStore
+    # Register for all event types
+    for event_type in [
+        EventTypes.NODE_REGISTERED,
+        EventTypes.NODE_APPROVED,
+        EventTypes.NODE_SUSPENDED,
+        EventTypes.NODE_REVOKED,
+        EventTypes.CLIENT_DEVICE_CREATED,
+        EventTypes.CLIENT_DEVICE_REVOKED,
+        EventTypes.POLICY_CREATED,
+        EventTypes.POLICY_UPDATED,
+        EventTypes.POLICY_DELETED,
+        EventTypes.SECURITY_ALERT,
+        EventTypes.TRUST_SCORE_CHANGED,
+        EventTypes.IP_ALLOCATED,
+        EventTypes.IP_POOL_LOW,
+        # User/Group events
+        EventTypes.USER_CREATED,
+        EventTypes.USER_UPDATED,
+        EventTypes.USER_SUSPENDED,
+        EventTypes.USER_DELETED,
+        EventTypes.GROUP_CREATED,
+        EventTypes.GROUP_UPDATED,
+        EventTypes.GROUP_DELETED,
+        EventTypes.USER_ADDED_TO_GROUP,
+        EventTypes.USER_REMOVED_FROM_GROUP,
+    ]:
+        event_bus.subscribe(event_type, persist_event, EventPriority.HIGH)
+
+    # Audit handler for important events
     event_bus.subscribe(EventTypes.NODE_REGISTERED, audit_handler, EventPriority.HIGH)
     event_bus.subscribe(EventTypes.NODE_REVOKED, audit_handler, EventPriority.HIGH)
     event_bus.subscribe(EventTypes.CLIENT_DEVICE_CREATED, audit_handler, EventPriority.HIGH)
