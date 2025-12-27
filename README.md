@@ -96,31 +96,38 @@ Cấu trúc này được thiết kế theo mô hình **Monorepo** để dễ qu
 
 ```text
 zero-trust-networking/
-├── control-plane/           # (NÃO BỘ) Server quản lý trung tâm
-│   ├── api/                 # Interface giao tiếp với Agent và Admin
-│   ├── core/                # Logic nghiệp vụ cốt lõi
-│   ├── database/            # Lưu trữ trạng thái (Postgres/SQLite)
-│   ├── policy-engine/       # (PDP) Nơi ra quyết định Trust Algorithm
-│   └── web-ui/              # (Optional) Dashboard quản trị
+├── control-plane/           # (NÃO BỘ) Server quản lý trung tâm - FastAPI
+│   ├── api/                 # REST API endpoints (Agent & Admin)
+│   ├── core/                # Logic nghiệp vụ: Trust Engine, IPAM, Policy
+│   ├── database/            # SQLAlchemy models + Alembic migrations
+│   ├── schemas/             # Pydantic schemas cho validation
+│   └── policy-engine/       # (PDP) Compiler chuyển Policy → Config
 │
-├── agent/                   # (TAY CHÂN) Chạy trên từng VPS/Client
-│   ├── core/                # Logic kết nối API, Heartbeat
-│   ├── wireguard/           # Quản lý Interface WG, Key pair
-│   └── firewall/            # (PEP) Quản lý iptables/nftables
+├── agent/                   # (TAY CHÂN) Daemon chạy trên từng VPS
+│   ├── wireguard/           # Quản lý WireGuard interface & peers
+│   ├── firewall/            # (PEP) Thực thi ACL qua iptables/nftables
+│   └── collectors/          # Thu thập dữ liệu cho Trust Algorithm
 │
-├── policies/                # (LUẬT) Định nghĩa Policy-as-Code
-│   ├── access-control/      # Ai được gặp ai (ACLs)
-│   └── compliance/          # Yêu cầu về OS, version...
+├── policies/                # (LUẬT) Policy-as-Code định nghĩa bằng YAML
+│   ├── roles/               # Role-based policies (app, database, ops)
+│   └── users/               # User-to-role mappings
 │
 ├── infrastructure/          # (CƠ BẮP) Automation & Deployment
-│   ├── ansible/             # Playbooks cài đặt (như đã bàn ở trên)
-│   ├── docker/              # Dockerfile cho Control Plane
-│   └── scripts/             # Helper scripts (keygen, bootstrap)
+│   ├── ansible/             # Playbooks, roles, inventory
+│   └── docker/              # Dockerfile & Caddy config
 │
-├── docs/                    # Tài liệu kiến trúc & vận hành
-├── tests/                   # E2E Testing
-├── docker-compose.yml       # Dev environment
-├── Makefile                 # Shortcuts lệnh
+├── scripts/                 # CLI tools & Installation scripts
+│   ├── hub/                 # Scripts cài đặt Hub (Control Plane)
+│   ├── node/                # Scripts cài đặt Node (Agent)
+│   ├── policy/              # Scripts apply policies
+│   └── lib/                 # Shared shell functions
+│
+├── docs/                    # Tài liệu kiến trúc, workflow, issues
+├── tests/                   # Integration & E2E testing
+├── web-ui/                  # (Optional) Dashboard quản trị
+│
+├── docker-compose.yml       # Dev environment (Control Plane + Traefik)
+├── pyproject.toml           # UV workspace configuration
 └── README.md
 ```
 
@@ -128,116 +135,513 @@ zero-trust-networking/
 
 ### Chi tiết từng thành phần (Deep Dive)
 
-#### 1. `control-plane/` (Policy Administrator - PA)
-Đây là nơi chứa API server. Nó **không** xử lý gói tin dữ liệu (Data Plane), nó chỉ phân phối cấu hình.
+#### 1. `control-plane/` — Policy Decision Point (PDP) & Policy Administrator (PA)
+
+Đây là **"Bộ não"** của hệ thống Zero Trust. FastAPI server xử lý đăng ký node, tính toán Trust Score, và phân phối cấu hình WireGuard + Firewall rules.
 
 ```text
 control-plane/
-├── main.py                  # Entrypoint (FastAPI/Go)
-├── config.py                # Load biến môi trường
+├── main.py                  # FastAPI entrypoint với lifespan management
+├── config.py                # Pydantic Settings (env vars, WG network, timeouts)
+├── schemas.py               # Root-level schemas
+│
 ├── api/
-│   ├── v1/
-│   │   ├── endpoints.py     # /register, /sync, /heartbeat
-│   │   └── admin.py         # API cho người quản trị
-│   └── dependencies.py      # Auth middleware (mTLS/Token)
-├── core/
-│   ├── key_manager.py       # Quản lý Public Keys
-│   └── ipam.py              # Cấp phát IP ảo (10.10.0.x)
+│   └── v1/
+│       ├── agent.py         # Agent API: /register, /sync, /heartbeat
+│       ├── admin.py         # Admin API: /nodes, /policies (X-Admin-Token auth)
+│       └── endpoints.py     # Legacy endpoints (backward compatible)
+│
+├── core/                    # ⭐ LOGIC NGHIỆP VỤ CỐT LÕI
+│   ├── trust_engine.py      # Dynamic Trust Scoring theo NIST SP 800-207
+│   ├── policy_engine.py     # Compile policies → firewall rules, allowed peers
+│   ├── node_manager.py      # Node lifecycle: register, approve, suspend, revoke
+│   ├── ipam.py              # IP Address Management (cấp phát overlay IPs)
+│   ├── wireguard_service.py # Quản lý WireGuard peers trên Hub server
+│   └── key_manager.py       # Quản lý Public/Private keys
+│
 ├── database/
-│   ├── models.py            # Node, Peer, Policy tables
-│   └── migrations/          # Alembic/SQL migration scripts
-└── policy-engine/           # QUAN TRỌNG NHẤT
-    ├── evaluator.py         # Hàm tính điểm tin cậy (Trust Score)
-    └── compiler.py          # Chuyển Policy -> WireGuard Config + IPTables
+│   ├── models.py            # SQLAlchemy: Node, Policy, TrustHistory, AuditLog
+│   ├── session.py           # Database session management (SQLite/PostgreSQL)
+│   └── migrations/          # Alembic migration scripts
+│
+├── schemas/                 # Pydantic schemas tách biệt
+│   ├── node.py              # NodeCreate, NodeResponse, NodeRole, NodeStatus
+│   ├── policy.py            # PolicyCreate, Protocol, Action enums
+│   ├── config.py            # PeerConfig, InterfaceConfig, AgentConfig
+│   └── base.py              # BaseResponse schemas
+│
+└── policy-engine/
+    ├── compiler.py          # Chuyển Policy YAML → WireGuard + iptables config
+    └── evaluator.py         # (Reserved) Advanced trust evaluation
 ```
 
-*   **Điểm nhấn:** Module `policy-engine` tách biệt. Khi API nhận request từ Agent, nó phải hỏi `policy-engine` trước khi trả về config.
+**Điểm nhấn kiến trúc:**
 
-#### 2. `agent/` (Policy Enforcement Point - PEP)
-Chạy trên mỗi VPS (Odoo, Postgres, Ops). Nó phải cực nhẹ và ổn định.
+| Module | Vai trò theo NIST 800-207 |
+|--------|---------------------------|
+| `trust_engine.py` | Tính **Trust Score** dựa trên: role weight, device health, behavior analysis, security events |
+| `policy_engine.py` | **Policy Decision Point** - quyết định node nào được giao tiếp với node nào |
+| `node_manager.py` | Quản lý lifecycle: `pending` → `active` → `suspended` → `revoked` |
+| `wireguard_service.py` | Cập nhật WireGuard peers trên Hub khi có node mới/bị revoke |
+
+#### 2. `agent/` — Policy Enforcement Point (PEP)
+
+Daemon Python chạy trên mỗi VPS. Thu thập thông tin, đồng bộ cấu hình từ Control Plane, và **thực thi Zero Trust** tại điểm cuối.
 
 ```text
 agent/
-├── agent.py                 # Main loop (Scheduler)
-├── client.py                # HTTP Client gọi về Control Plane (mTLS)
+├── agent.py                 # Main daemon: registration, periodic sync, apply config
+├── client.py                # HTTP client với auto-failover (overlay ↔ public URL)
+├── pyproject.toml           # Agent dependencies
+│
 ├── wireguard/
-│   ├── manager.py           # Gọi lệnh `wg`, `wg-quick`
-│   └── config_builder.py    # Tạo file wg0.conf từ JSON
+│   ├── manager.py           # WireGuard interface lifecycle: up/down, add/remove peers
+│   └── config_builder.py    # Sinh file wg0.conf từ API response
+│
 ├── firewall/
-│   ├── iptables.py          # Wrapper lệnh iptables
-│   └── nftables.py          # (Future proof)
-└── collectors/              # Thu thập thông tin cho Trust Algorithm
-    ├── host_info.py         # Lấy OS version, uptime
-    └── network_stats.py     # Lấy thông tin traffic
+│   ├── iptables.py          # IPTables manager với dedicated ZT_ACL chain
+│   └── nftables.py          # (Future) nftables support
+│
+└── collectors/              # ⭐ THU THẬP DỮ LIỆU CHO TRUST ALGORITHM
+    ├── host_info.py         # OS, platform, distro, kernel version
+    ├── network_stats.py     # Connection patterns, traffic metrics, WG stats
+    └── security_events.py   # SSH failures, firewall violations, suspicious processes
 ```
 
-*   **Điểm nhấn:** `firewall` module là nơi thực thi Zero Trust. Nếu Control Plane bảo "Cấm", module này sẽ `DROP` gói tin ngay tại máy, trước khi nó vào đến ứng dụng.
+**Workflow của Agent:**
 
-#### 3. `policies/` (Policy as Code)
-Thay vì lưu cứng trong Database, policy nên được định nghĩa bằng code (YAML/JSON) để có thể Review và Version Control.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Agent Startup                                                   │
+├─────────────────────────────────────────────────────────────────┤
+│  1. Generate WireGuard keypair (if not exists)                  │
+│  2. Collect host_info, security_events, network_stats           │
+│  3. POST /api/v1/agent/register với public_key + device_info    │
+│  4. Wait for approval (status: pending → active)                │
+├─────────────────────────────────────────────────────────────────┤
+│  Periodic Sync Loop (every 60s)                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  1. POST /api/v1/agent/sync với current device_info             │
+│  2. Receive: interface config, peers list, firewall rules       │
+│  3. Apply WireGuard config (wg syncconf / wg-quick)             │
+│  4. Apply iptables rules (ZT_ACL chain)                         │
+│  5. POST /api/v1/agent/heartbeat                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Điểm nhấn:** Module `firewall/iptables.py` tạo chain `ZT_ACL` riêng biệt để quản lý rules mà không ảnh hưởng đến các rules hệ thống khác.
+
+#### 3. `policies/` — Policy as Code
+
+Định nghĩa chính sách bằng YAML để version control và code review. Control Plane đọc và compile thành firewall rules.
 
 ```text
 policies/
-├── global.yaml              # Policy mặc định (VD: Deny All)
+├── global.yaml              # Default policies: deny-all, zones, base rules
+│
 ├── roles/
-│   ├── database.yaml        # Role: Postgres (Allow port 5432 from App)
-│   ├── app.yaml             # Role: Odoo (Allow outbound to DB)
-│   └── ops.yaml             # Role: Admin (Allow SSH)
+│   ├── database.yaml        # DB policies: allow replication, app access
+│   ├── app.yaml             # App policies: access to DB, inter-app comm
+│   └── ops.yaml             # Ops policies: SSH everywhere, metrics collection
+│
 └── users/
-    └── admin-team.yaml      # Mapping user -> role
+    └── admin-team.yaml      # User → Role mappings
 ```
 
-*   **Logic:** Control Plane sẽ đọc các file này khi khởi động hoặc khi có trigger reload để cập nhật vào Database/Memory.
+**Ví dụ `global.yaml`:**
 
-#### 4. `infrastructure/` (Ansible & Deployment)
-Nơi chứa code để triển khai hệ thống này ra 4 VPS thực tế.
+```yaml
+metadata:
+  name: global-policy
+  version: "1.0"
+  description: "Global Zero Trust policies"
+
+default_action: deny          # DENY ALL by default (Zero Trust)
+
+zones:
+  hub:
+    description: "Control Plane zone"
+    trust_level: 100
+  internal:
+    description: "Internal services"
+    trust_level: 80
+
+base_rules:
+  - name: allow-wireguard
+    protocol: udp
+    port: 51820
+    action: allow
+
+  - name: allow-icmp
+    protocol: icmp
+    action: allow
+    rate_limit: "10/second"
+```
+
+**Ví dụ `roles/database.yaml`:**
+
+```yaml
+metadata:
+  name: database-role
+
+inbound:
+  - name: app-to-postgres
+    from_role: app
+    protocol: tcp
+    port: 5432
+    action: allow
+
+  - name: ops-admin-access
+    from_role: ops
+    protocol: tcp
+    ports: [5432, 6379, 22]
+    action: allow
+
+outbound:
+  - name: db-replication
+    to_role: database
+    protocol: tcp
+    port: 5432
+    action: allow
+```
+
+#### 4. `infrastructure/` — Ansible & Docker Deployment
+
+Automation để triển khai hệ thống lên production.
 
 ```text
 infrastructure/
 ├── ansible/
+│   ├── ansible.cfg              # Ansible configuration
+│   ├── site.yml                 # Master playbook (full deployment)
+│   ├── deploy-site.yml          # Phased deployment orchestrator
+│   │
 │   ├── inventory/
-│   │   └── hosts.ini
-│   ├── roles/
-│   │   ├── common/          # Cài Python, Docker
-│   │   ├── control-plane/   # Deploy Docker container Control Plane
-│   │   └── agent/           # Cài Systemd service cho Agent
-│   └── deploy-site.yml
+│   │   ├── hosts.ini.example    # Production inventory template
+│   │   ├── local.ini            # Local testing inventory
+│   │   └── group_vars/
+│   │       ├── all.yml          # Global variables
+│   │       ├── hub.yml          # Hub-specific vars
+│   │       ├── app.yml          # App nodes vars
+│   │       ├── db.yml           # Database nodes vars
+│   │       └── ops.yml          # Ops nodes vars
+│   │
+│   ├── playbook/
+│   │   ├── deploy-hub.yml       # Deploy Hub (Control Plane + WireGuard)
+│   │   ├── deploy-agents.yml    # Deploy Agents to nodes
+│   │   ├── setup-wireguard.yml  # WireGuard setup only
+│   │   ├── sync-policies.yml    # Sync YAML policies to database
+│   │   └── templates/           # Jinja2 templates
+│   │
+│   └── roles/
+│       ├── common/              # Base system setup (Python, dependencies)
+│       ├── wireguard/           # WireGuard installation
+│       ├── control-plane/       # Control Plane deployment
+│       └── agent/               # Agent deployment as systemd service
+│
 └── docker/
-    └── Dockerfile.control   # Image cho Control Plane
+    ├── Dockerfile.control       # Multi-stage build với UV package manager
+    └── Caddyfile                # Caddy reverse proxy configuration
+```
+
+**Deployment Phases (trong `deploy-site.yml`):**
+
+| Phase | Playbook | Mô tả |
+|-------|----------|-------|
+| 0 | Preflight | Kiểm tra connectivity, dependencies |
+| 1 | `deploy-hub.yml` | Cài Control Plane + WireGuard Hub |
+| 2 | `deploy-agents.yml` | Cài Agent trên tất cả nodes |
+| 3 | Verify | Health check, test connectivity |
+
+#### 5. `scripts/` — CLI Tools & Installation Scripts
+
+Scripts để cài đặt nhanh và quản trị hệ thống.
+
+```text
+scripts/
+├── ztctl                    # ⭐ CLI Admin Tool
+├── install.sh               # Quick install (hub hoặc node)
+├── install-agent.sh         # Agent-only installation
+│
+├── hub/
+│   ├── install.sh           # Full Hub installation (590+ lines)
+│   ├── uninstall.sh         # Clean uninstall
+│   └── add-secondary.sh     # Add secondary Hub (HA)
+│
+├── node/
+│   ├── install.sh           # Node/Agent installation (517+ lines)
+│   └── uninstall.sh         # Clean uninstall
+│
+├── policy/
+│   └── apply.sh             # Apply policies from YAML files
+│
+└── lib/
+    └── common.sh            # Shared shell functions
+```
+
+**`ztctl` — Zero Trust Control CLI:**
+
+```bash
+# Node management
+ztctl node list              # Liệt kê tất cả nodes
+ztctl node show <hostname>   # Chi tiết node
+ztctl node approve <hostname> # Approve pending node
+ztctl node remove <hostname>  # Remove node
+
+# Policy management
+ztctl policy list            # Liệt kê policies
+ztctl policy allow <src> <dst> <port>  # Tạo allow rule
+ztctl policy deny <src> <dst> <port>   # Tạo deny rule
+ztctl policy remove <id>     # Xóa policy
+```
+
+#### 6. `docs/` — Documentation
+
+```text
+docs/
+├── NIST.SP.800-207.md       # NIST Zero Trust Architecture reference
+├── README.MD                # Documentation index
+├── WORKFLOW.md              # ⭐ Workflow design với architecture diagrams
+│
+├── chat/                    # Development session logs
+│   └── YYYY-MM-DD_HHhMM.md
+│
+├── issues/                  # Issue tracking documents
+│   └── *.md
+│
+└── references/
+    └── zero-trust-security-model.md
+```
+
+#### 7. `tests/` — Testing
+
+```text
+tests/
+├── uninstall.sh             # Test cleanup script
+│
+├── agent/
+│   ├── agent_test.sh        # Agent functionality tests
+│   ├── install_agent_test.sh
+│   └── test_case.md         # Test cases documentation
+│
+├── control-plane/
+│   ├── connection_test.sh   # API connectivity tests
+│   ├── peer_test.sh         # WireGuard peer tests
+│   ├── endpoint/            # API endpoint tests
+│   └── caddy/               # Reverse proxy tests
+│
+├── ansible/
+│   └── playbook/            # Ansible playbook tests
+│
+└── install/
+    └── new_install_test.sh  # Fresh installation tests
+```
+
+#### 8. Root Files
+
+| File | Mô tả |
+|------|-------|
+| `docker-compose.yml` | Dev environment: control-plane, traefik, caddy |
+| `pyproject.toml` | UV workspace config (members: control-plane, agent) |
+| `README.md` | Tài liệu này |
+
+---
+
+### Workflow hoạt động (End-to-End Example)
+
+#### Phase 1: Khởi tạo hệ thống
+
+```bash
+# 1. Deploy Hub (VPS-1)
+cd infrastructure/ansible
+ansible-playbook -i inventory/hosts.ini playbook/deploy-hub.yml
+
+# 2. Deploy Agents (VPS-2: App, VPS-3: DB)
+ansible-playbook -i inventory/hosts.ini playbook/deploy-agents.yml
+```
+
+#### Phase 2: Node Registration & Approval
+
+```
+┌─────────────┐         ┌─────────────────┐         ┌─────────────┐
+│   VPS-3     │         │  Control Plane  │         │   Admin     │
+│  (DB Agent) │         │     (Hub)       │         │  (ztctl)    │
+└──────┬──────┘         └────────┬────────┘         └──────┬──────┘
+       │                         │                         │
+       │ POST /register          │                         │
+       │ {role: database,        │                         │
+       │  public_key: xxx,       │                         │
+       │  device_info: {...}}    │                         │
+       │────────────────────────>│                         │
+       │                         │                         │
+       │     {status: pending}   │                         │
+       │<────────────────────────│                         │
+       │                         │                         │
+       │                         │   ztctl node list       │
+       │                         │<────────────────────────│
+       │                         │                         │
+       │                         │   ztctl node approve    │
+       │                         │        vps-3            │
+       │                         │<────────────────────────│
+       │                         │                         │
+       │                         │ Trust Engine calculates │
+       │                         │ trust_score = 85        │
+       │                         │ risk_level = low        │
+       │                         │                         │
+```
+
+#### Phase 3: Configuration Sync
+
+```
+┌─────────────┐         ┌─────────────────┐
+│   VPS-3     │         │  Control Plane  │
+│  (DB Agent) │         │                 │
+└──────┬──────┘         └────────┬────────┘
+       │                         │
+       │ POST /sync              │
+       │ {device_info: {...}}    │
+       │────────────────────────>│
+       │                         │
+       │                         │ Policy Engine:
+       │                         │ - DB role needs peers: Hub, App
+       │                         │ - Firewall: ALLOW 5432 from App
+       │                         │
+       │ {                       │
+       │   interface: {          │
+       │     address: 10.10.0.3, │
+       │     private_key: xxx    │
+       │   },                    │
+       │   peers: [hub, app],    │
+       │   firewall_rules: [     │
+       │     {src: 10.10.0.2,    │
+       │      port: 5432,        │
+       │      action: ACCEPT}    │
+       │   ]                     │
+       │ }                       │
+       │<────────────────────────│
+       │                         │
+       │ Agent applies:          │
+       │ - wg syncconf wg0       │
+       │ - iptables -A ZT_ACL... │
+       │                         │
+```
+
+#### Kết quả: Zero Trust Achieved
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     WireGuard Overlay Network                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
+│  │  VPS-1 Hub  │    │  VPS-2 App  │    │  VPS-3 DB   │         │
+│  │  10.10.0.1  │────│  10.10.0.2  │────│  10.10.0.3  │         │
+│  │             │    │             │    │             │         │
+│  │ Control     │    │ Odoo        │    │ PostgreSQL  │         │
+│  │ Plane       │    │             │    │             │         │
+│  └─────────────┘    └─────────────┘    └─────────────┘         │
+│                            │                  │                 │
+│                            │   TCP 5432 ✅    │                 │
+│                            │─────────────────>│                 │
+│                            │                  │                 │
+│                            │   SSH 22 ❌      │                 │
+│                            │────────X────────>│                 │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+✅ VPS-2 (App) có thể kết nối PostgreSQL port 5432 trên VPS-3
+❌ VPS-2 (App) KHÔNG thể SSH vào VPS-3 (bị chặn bởi iptables)
+✅ Chỉ role:ops mới được SSH vào tất cả nodes
 ```
 
 ---
 
-### Workflow hoạt động (Ví dụ)
+### Trust Algorithm Implementation
 
-1.  **Khởi tạo:**
-    *   Bạn định nghĩa file `policies/roles/database.yaml`: *Chỉ cho phép `role:app` kết nối port `5432`*.
-    *   Bạn chạy `ansible` để deploy Control Plane lên VPS-1 và Agent lên VPS-2 (App), VPS-3 (DB).
+Hệ thống implement **Dynamic Trust Scoring** theo NIST SP 800-207:
 
-2.  **Đăng ký (Registration):**
-    *   Agent tại VPS-3 (DB) khởi động, sinh Key, gọi API `/register` với thông tin `role: database`.
-    *   Control Plane lưu thông tin, chưa cấp quyền ngay (Pending Approval).
+```python
+# Trong trust_engine.py
+trust_score = calculate_trust_score(
+    role_weight=30,           # Weight theo role (ops > app > db)
+    device_health=25,         # OS updated, no vulnerabilities
+    behavior_score=25,        # Connection patterns, traffic analysis
+    security_events=20        # SSH failures, firewall violations
+)
 
-3.  **Cấp phép (Trust Evaluation):**
-    *   Bạn (Admin) approve node VPS-3.
-    *   `policy-engine` tính toán: Node này là DB, vậy nó cần mở port 5432 cho ai? -> Cho `role: app`.
+# Risk levels
+if trust_score >= 80: risk_level = "low"
+elif trust_score >= 60: risk_level = "medium"
+elif trust_score >= 40: risk_level = "high"
+else: risk_level = "critical"
 
-4.  **Đồng bộ (Synchronization):**
-    *   Agent tại VPS-3 gọi `/sync`.
-    *   Control Plane trả về:
-        *   WireGuard Peer: VPS-1 (Hub), VPS-2 (App).
-        *   Firewall Rule: `ALLOW TCP 5432 FROM 10.10.0.2 (VPS-2 IP)`.
-    *   Agent tại VPS-3 apply config này.
+# Actions based on risk
+if risk_level == "critical":
+    action = "isolate"        # Revoke all peers, block traffic
+elif risk_level == "high":
+    action = "restrict"       # Limit peers, enhanced monitoring
+else:
+    action = "allow"          # Normal operation
+```
 
-Kết quả: **Zero Trust đạt được.** VPS-2 thấy VPS-3 qua tunnel, nhưng chỉ vào được port 5432. SSH (port 22) bị chặn bởi iptables do Agent quản lý (trừ khi policy cho phép).
+**Trust History Tracking:**
+
+```sql
+-- Mỗi lần sync, trust score được lưu lại
+SELECT hostname, trust_score, previous_score, risk_level, action_taken
+FROM trust_history
+WHERE hostname='vps-3'
+ORDER BY calculated_at DESC;
+
+┌───────────┬─────────────┬────────────────┬────────────┬──────────────┐
+│ hostname  │ trust_score │ previous_score │ risk_level │ action_taken │
+├───────────┼─────────────┼────────────────┼────────────┼──────────────┤
+│ vps-3     │ 85          │ 82             │ low        │ allow        │
+│ vps-3     │ 82          │ 80             │ low        │ allow        │
+│ vps-3     │ 80          │ NULL           │ low        │ allow        │
+└───────────┴─────────────┴────────────────┴────────────┴──────────────┘
+```
+
 ---
 
-### Kết quả bạn nhận được
-Sau khi chạy, bạn sẽ có ngay một dự án **đủ tiêu chuẩn** để bắt đầu phát triển, không phải lo nghĩ về việc đặt file ở đâu.
+### Quick Start
 
-*   **`control-plane/`**: Đã có sẵn FastAPI server chạy được ngay.
-*   **`agent/`**: Đã có khung sườn cho Agent chạy ngầm.
-*   **`policies/`**: Đã có ví dụ về Role-based policy (Odoo được gọi Postgres).
-*   **`infrastructure/`**: Đã có Dockerfile và Ansible inventory.
+```bash
+# Clone repository
+git clone https://github.com/your-org/zero-trust-networking.git
+cd zero-trust-networking
 
-Đây là **bộ khung "xương sống"** (Skeleton) vững chắc nhất để bạn xây dựng hệ thống Zero Trust tự chủ.
+# Option 1: Script installation
+# Trên Hub server:
+sudo ./scripts/hub/install.sh
+
+# Trên Node servers:
+sudo ./scripts/node/install.sh --hub-url https://hub.example.com
+
+# Option 2: Ansible deployment
+cd infrastructure/ansible
+cp inventory/hosts.ini.example inventory/hosts.ini
+# Edit inventory với IP các servers
+ansible-playbook -i inventory/hosts.ini site.yml
+
+# Option 3: Docker (development)
+docker-compose up -d
+```
+
+---
+
+### Công nghệ sử dụng
+
+| Component | Technology | Lý do chọn |
+|-----------|------------|------------|
+| Control Plane | FastAPI + SQLAlchemy | Async, type-safe, ORM mạnh |
+| Agent | Python + systemd | Nhẹ, ổn định, dễ debug |
+| VPN | WireGuard | Hiệu năng cao, modern crypto |
+| Firewall | iptables | Universal, stable, well-documented |
+| Deployment | Ansible | Agentless, declarative, idempotent |
+| Reverse Proxy | Caddy/Traefik | Auto HTTPS, config đơn giản |
+| Database | SQLite/PostgreSQL | SQLite cho dev, Postgres cho production |
+
+---
+
+Đây là **hệ thống Zero Trust hoàn chỉnh**, implement đầy đủ các nguyên tắc NIST SP 800-207 với khả năng mở rộng và maintain dễ dàng.
