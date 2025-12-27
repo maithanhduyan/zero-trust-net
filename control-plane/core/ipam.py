@@ -12,6 +12,8 @@ import logging
 
 from database.models import Node, IPAllocation
 from config import settings
+from .events import publish
+from .domain_events import EventTypes, ip_allocated_payload
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +81,36 @@ class IPAMService:
 
         Raises:
             RuntimeError: If IP pool is exhausted
+
+        Note: Uses transaction isolation to prevent race conditions.
+        For SQLite, the session should use BEGIN IMMEDIATE.
+        For PostgreSQL, this query can use SELECT FOR UPDATE.
         """
-        # Get all used IPs from nodes table
+        # Get ALL used IPs from nodes table (regardless of status)
+        # This prevents race conditions where revoked node IPs are re-allocated
+        # but the record still exists in DB
         used_ips = set()
         nodes = db.query(Node).filter(Node.overlay_ip.isnot(None)).all()
         for node in nodes:
             # Extract IP without CIDR
             ip = node.overlay_ip.split('/')[0] if '/' in str(node.overlay_ip) else node.overlay_ip
             used_ips.add(ip)
+
+        # Check pool utilization and warn if low
+        total_available = self.total_hosts
+        used_count = len(used_ips)
+        utilization = (used_count / total_available) * 100 if total_available > 0 else 0
+
+        if utilization > 80:
+            publish(
+                EventTypes.IP_POOL_LOW,
+                {
+                    "available": total_available - used_count,
+                    "total": total_available,
+                    "utilization_percent": round(utilization, 2)
+                },
+                source="IPAM"
+            )
 
         # Find first available IP
         for ip in self.network.hosts():
@@ -95,6 +119,12 @@ class IPAMService:
                 logger.info(f"Allocated IP {ip_str} for node_id={node_id}")
                 return ip_str
 
+        # Pool exhausted
+        publish(
+            EventTypes.IP_POOL_EXHAUSTED,
+            {"network": self.network_cidr, "used": used_count},
+            source="IPAM"
+        )
         logger.error("IP pool exhausted!")
         raise RuntimeError("IP pool exhausted. No available addresses.")
 

@@ -17,6 +17,8 @@ from sqlalchemy import and_
 
 from database.models import ClientDevice, NodeStatus, DeviceType, TunnelMode, IPAllocation
 from config import settings
+from .events import publish
+from .domain_events import EventTypes, client_device_created_payload, client_device_status_changed_payload
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,10 @@ class ClientManager:
         """
         Allocate an overlay IP for a client device
         Uses a separate pool from server nodes (.100 - .250)
+
+        Note: Uses transaction isolation to prevent race conditions.
+        For SQLite, the caller should use BEGIN IMMEDIATE.
+        For PostgreSQL, SELECT FOR UPDATE can be used.
         """
         network_prefix = ".".join(settings.OVERLAY_GATEWAY.split(".")[:-1])
 
@@ -175,6 +181,21 @@ class ClientManager:
         db.refresh(device)
 
         logger.info(f"Created client device: {device_name} ({device_type}) for user {user_id}, IP: {overlay_ip}")
+
+        # Publish event for WireGuard sync and audit
+        publish(
+            EventTypes.CLIENT_DEVICE_CREATED,
+            client_device_created_payload(
+                device_id=device.id,
+                device_name=device.device_name,
+                device_type=device.device_type,
+                user_id=device.user_id,
+                overlay_ip=device.overlay_ip,
+                tunnel_mode=device.tunnel_mode,
+                expires_at=device.expires_at
+            ) | {"public_key": device.public_key},  # Add public_key for WireGuard handler
+            source="ClientManager"
+        )
 
         return device
 
@@ -287,13 +308,28 @@ class ClientManager:
         if not device:
             return False
 
+        old_status = device.status
+        public_key = device.public_key  # Capture before changing status
+        device_name = device.device_name
+
         device.status = NodeStatus.REVOKED.value
         device.config_token = None  # Invalidate download token
         db.commit()
 
-        logger.info(f"Revoked client device: {device.device_name} (ID: {device_id})")
+        logger.info(f"Revoked client device: {device_name} (ID: {device_id})")
 
-        # TODO: Remove peer from Hub WireGuard interface
+        # Publish event - WireGuard handler will remove peer
+        publish(
+            EventTypes.CLIENT_DEVICE_REVOKED,
+            client_device_status_changed_payload(
+                device_id=device_id,
+                device_name=device_name,
+                old_status=old_status,
+                new_status=NodeStatus.REVOKED.value,
+                reason="Admin revoked"
+            ) | {"public_key": public_key},  # Add public_key for WireGuard handler
+            source="ClientManager"
+        )
 
         return True
 

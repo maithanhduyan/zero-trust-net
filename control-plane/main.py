@@ -14,10 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
-from api.v1 import agent, admin, endpoints, client
+from api.v1 import agent, admin, endpoints, client, websocket
 from database.session import init_db, db_manager
 from config import settings
 from schemas.base import HealthResponse, ErrorResponse
+from core.event_handlers import register_event_handlers
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +45,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.ENV}")
 
     init_db()
+    register_event_handlers()
+
+    # Register WebSocket-specific handlers
+    from api.v1.websocket import register_websocket_handlers
+    register_websocket_handlers()
+
     startup_time = datetime.utcnow()
 
     logger.info("Application started successfully")
@@ -163,6 +170,13 @@ app.include_router(
     client.router,
     prefix="/api/v1/client",
     tags=["Client Devices"]
+)
+
+# WebSocket API (Real-time Communication)
+app.include_router(
+    websocket.router,
+    prefix="/api/v1",
+    tags=["WebSocket"]
 )
 
 

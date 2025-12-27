@@ -13,6 +13,8 @@ from database.models import Node, NodeStatus, AuditLog, NodeHistory
 from config import settings
 from .ipam import ipam_service
 from .wireguard_service import wireguard_service
+from .events import publish
+from .domain_events import EventTypes, node_registered_payload, node_status_changed_payload
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +199,20 @@ class NodeManager:
                 else:
                     logger.warning(f"Failed to add WireGuard peer for {hostname}")
 
+            # Publish NodeRegistered event
+            publish(
+                EventTypes.NODE_REGISTERED,
+                node_registered_payload(
+                    node_id=new_node.id,
+                    hostname=hostname,
+                    overlay_ip=overlay_ip,
+                    public_key=public_key,
+                    role=role,
+                    external_ip=client_ip
+                ),
+                source="NodeManager"
+            )
+
             return new_node, True
 
         except IntegrityError as e:
@@ -240,6 +256,20 @@ class NodeManager:
             status="success"
         )
 
+        # Publish event
+        publish(
+            EventTypes.NODE_APPROVED,
+            node_status_changed_payload(
+                node_id=node.id,
+                hostname=node.hostname,
+                old_status=NodeStatus.PENDING.value,
+                new_status=NodeStatus.ACTIVE.value,
+                reason="Admin approved",
+                changed_by=admin_id
+            ) | {"public_key": node.public_key, "overlay_ip": node.overlay_ip},
+            source="NodeManager"
+        )
+
         logger.info(f"Node approved: {node.hostname}")
         return node
 
@@ -267,6 +297,20 @@ class NodeManager:
             status="success"
         )
 
+        # Publish event
+        publish(
+            EventTypes.NODE_SUSPENDED,
+            node_status_changed_payload(
+                node_id=node.id,
+                hostname=node.hostname,
+                old_status=NodeStatus.ACTIVE.value,
+                new_status=NodeStatus.SUSPENDED.value,
+                reason="Admin suspended",
+                changed_by=admin_id
+            ) | {"public_key": node.public_key},
+            source="NodeManager"
+        )
+
         logger.info(f"Node suspended: {node.hostname}")
         return node
 
@@ -292,6 +336,20 @@ class NodeManager:
             target_type="node",
             target_id=str(node_id),
             status="success"
+        )
+
+        # Publish event
+        publish(
+            EventTypes.NODE_REVOKED,
+            node_status_changed_payload(
+                node_id=node.id,
+                hostname=node.hostname,
+                old_status=NodeStatus.ACTIVE.value,
+                new_status=NodeStatus.REVOKED.value,
+                reason="Admin revoked",
+                changed_by=admin_id
+            ) | {"public_key": node.public_key},
+            source="NodeManager"
         )
 
         logger.info(f"Node revoked: {node.hostname}")
