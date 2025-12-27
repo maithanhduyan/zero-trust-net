@@ -30,3 +30,6 @@ uv.lock
 traefik/acme.json
 traefik/log
 traefik/dynamic.yml
+
+# Ansible inventory files
+infrastructure/ansible/inventory/hosts.ini
