@@ -666,3 +666,183 @@ async def get_ip_allocations(
         ],
         "total": len(allocations)
     }
+
+
+# === WireGuard Management Endpoints ===
+
+@router.post(
+    "/wireguard/add-peer",
+    summary="Add peer to Hub WireGuard",
+    description="Automatically add a peer to the Hub's WireGuard interface"
+)
+async def add_wireguard_peer(
+    peer_data: dict,
+    _: bool = Depends(verify_admin_token)
+):
+    """
+    Add a peer to Hub's WireGuard interface.
+
+    This endpoint runs wg commands on the Hub server to add a new peer.
+    """
+    import subprocess
+
+    public_key = peer_data.get("public_key")
+    allowed_ips = peer_data.get("allowed_ips")
+    comment = peer_data.get("comment", "")
+
+    if not public_key or not allowed_ips:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "public_key and allowed_ips are required",
+                "error_code": "MISSING_FIELDS"
+            }
+        )
+
+    try:
+        # Add peer using wg command
+        cmd_add = ["wg", "set", "wg0", "peer", public_key, "allowed-ips", allowed_ips]
+        result_add = subprocess.run(cmd_add, capture_output=True, text=True, timeout=10)
+
+        if result_add.returncode != 0:
+            logger.error(f"Failed to add peer: {result_add.stderr}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": f"Failed to add peer: {result_add.stderr}",
+                    "error_code": "WG_ADD_FAILED"
+                }
+            )
+
+        # Save config
+        cmd_save = ["wg-quick", "save", "wg0"]
+        result_save = subprocess.run(cmd_save, capture_output=True, text=True, timeout=10)
+
+        if result_save.returncode != 0:
+            logger.warning(f"Failed to save config: {result_save.stderr}")
+
+        logger.info(f"Added WireGuard peer: {public_key[:20]}... -> {allowed_ips} ({comment})")
+
+        return {
+            "success": True,
+            "message": f"Peer added successfully",
+            "peer": {
+                "public_key": public_key,
+                "allowed_ips": allowed_ips,
+                "comment": comment
+            }
+        }
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={
+                "error": "WireGuard command timed out",
+                "error_code": "WG_TIMEOUT"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error adding peer: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": str(e),
+                "error_code": "WG_ERROR"
+            }
+        )
+
+
+@router.get(
+    "/wireguard/peers",
+    summary="List WireGuard peers",
+    description="Get list of all WireGuard peers on Hub"
+)
+async def list_wireguard_peers(
+    _: bool = Depends(verify_admin_token)
+):
+    """List all WireGuard peers on Hub"""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["wg", "show", "wg0", "dump"],
+            capture_output=True, text=True, timeout=10
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"error": "Failed to get peers", "error_code": "WG_ERROR"}
+            )
+
+        peers = []
+        lines = result.stdout.strip().split('\n')
+
+        # Skip first line (interface info)
+        for line in lines[1:]:
+            if line:
+                parts = line.split('\t')
+                if len(parts) >= 4:
+                    peers.append({
+                        "public_key": parts[0],
+                        "endpoint": parts[2] if parts[2] != "(none)" else None,
+                        "allowed_ips": parts[3],
+                        "latest_handshake": int(parts[4]) if len(parts) > 4 and parts[4] != "0" else None,
+                        "transfer_rx": int(parts[5]) if len(parts) > 5 else 0,
+                        "transfer_tx": int(parts[6]) if len(parts) > 6 else 0,
+                    })
+
+        return {
+            "success": True,
+            "peers": peers,
+            "total": len(peers)
+        }
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"error": "Command timed out", "error_code": "WG_TIMEOUT"}
+        )
+
+
+@router.delete(
+    "/wireguard/peers/{public_key}",
+    summary="Remove WireGuard peer",
+    description="Remove a peer from Hub's WireGuard interface"
+)
+async def remove_wireguard_peer(
+    public_key: str,
+    _: bool = Depends(verify_admin_token)
+):
+    """Remove a WireGuard peer from Hub"""
+    import subprocess
+    import urllib.parse
+
+    # URL decode the public key
+    decoded_key = urllib.parse.unquote(public_key)
+
+    try:
+        cmd = ["wg", "set", "wg0", "peer", decoded_key, "remove"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"error": f"Failed to remove peer: {result.stderr}", "error_code": "WG_ERROR"}
+            )
+
+        # Save config
+        subprocess.run(["wg-quick", "save", "wg0"], capture_output=True, timeout=10)
+
+        logger.info(f"Removed WireGuard peer: {decoded_key[:20]}...")
+
+        return {
+            "success": True,
+            "message": "Peer removed successfully"
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": str(e), "error_code": "WG_ERROR"}
+        )

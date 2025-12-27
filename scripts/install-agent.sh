@@ -35,9 +35,13 @@ BRANCH="${BRANCH:-master}"
 HUB_URL="${HUB_URL:-}"
 HUB_ENDPOINT="${HUB_ENDPOINT:-}"
 HUB_PUBLIC_KEY="${HUB_PUBLIC_KEY:-}"
+HUB_ADMIN_TOKEN="${HUB_ADMIN_TOKEN:-change-me-admin-secret}"
 NODE_ROLE="${NODE_ROLE:-app}"
-NODE_HOSTNAME="${NODE_HOSTNAME:-$(hostname)}"
+NODE_HOSTNAME_RAW="${NODE_HOSTNAME:-$(hostname)}"
 SYNC_INTERVAL="${SYNC_INTERVAL:-60}"
+
+# Sanitize hostname: lowercase, replace dots with hyphens, remove invalid chars
+NODE_HOSTNAME=$(echo "$NODE_HOSTNAME_RAW" | tr '[:upper:]' '[:lower:]' | sed 's/\./-/g' | sed 's/[^a-z0-9-]//g' | sed 's/^-//;s/-$//' | cut -c1-63)
 
 # WireGuard config
 WG_PORT="51820"
@@ -114,7 +118,11 @@ validate_requirements() {
     echo "  HUB_ENDPOINT:   $HUB_ENDPOINT"
     echo "  HUB_PUBLIC_KEY: ${HUB_PUBLIC_KEY:0:20}..."
     echo "  NODE_ROLE:      $NODE_ROLE"
-    echo "  NODE_HOSTNAME:  $NODE_HOSTNAME"
+    if [ "$NODE_HOSTNAME" != "$NODE_HOSTNAME_RAW" ]; then
+        echo "  NODE_HOSTNAME:  $NODE_HOSTNAME (sanitized from: $NODE_HOSTNAME_RAW)"
+    else
+        echo "  NODE_HOSTNAME:  $NODE_HOSTNAME"
+    fi
 
     success "Cấu hình hợp lệ"
 
@@ -312,7 +320,7 @@ EOF
 # PHASE 6: ADD PEER TO HUB (via API)
 # ==============================================================================
 add_peer_to_hub() {
-    print_phase "6" "THÊM PEER VÀO HUB"
+    print_phase "6" "TỰ ĐỘNG THÊM PEER VÀO HUB"
 
     NODE_PUBLIC_KEY=$(cat /etc/wireguard/public.key)
 
@@ -324,29 +332,34 @@ add_peer_to_hub() {
         OVERLAY_IP_ONLY="10.10.0.100"
     fi
 
-    log "Yêu cầu Hub thêm peer..."
+    log "Gọi API thêm peer vào Hub..."
     log "Node Public Key: $NODE_PUBLIC_KEY"
     log "AllowedIPs: ${OVERLAY_IP_ONLY}/32"
 
-    # The Control Plane should handle adding peer to Hub's WireGuard
-    # For now, we'll display manual command
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  QUAN TRỌNG: Chạy lệnh sau trên HUB SERVER:${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "wg set wg0 peer ${NODE_PUBLIC_KEY} allowed-ips ${OVERLAY_IP_ONLY}/32"
-    echo ""
-    echo "# Hoặc thêm permanent vào config:"
-    echo "cat >> /etc/wireguard/wg0.conf << 'PEER'"
-    echo ""
-    echo "[Peer]"
-    echo "# ${NODE_HOSTNAME}"
-    echo "PublicKey = ${NODE_PUBLIC_KEY}"
-    echo "AllowedIPs = ${OVERLAY_IP_ONLY}/32"
-    echo "PEER"
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    # Call API to add peer to Hub
+    ADD_PEER_RESPONSE=$(curl -s -X POST "${HUB_URL}/api/v1/admin/wireguard/add-peer" \
+        -H "Content-Type: application/json" \
+        -H "X-Admin-Token: ${HUB_ADMIN_TOKEN}" \
+        -d "{
+            \"public_key\": \"${NODE_PUBLIC_KEY}\",
+            \"allowed_ips\": \"${OVERLAY_IP_ONLY}/32\",
+            \"comment\": \"${NODE_HOSTNAME}\"
+        }" 2>&1)
+
+    if echo "$ADD_PEER_RESPONSE" | grep -q '"success":true'; then
+        success "✅ Peer đã được thêm vào Hub tự động!"
+    else
+        warn "Không thể tự động thêm peer. Phản hồi: $ADD_PEER_RESPONSE"
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  FALLBACK: Chạy lệnh sau trên HUB SERVER:${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo "wg set wg0 peer ${NODE_PUBLIC_KEY} allowed-ips ${OVERLAY_IP_ONLY}/32"
+        echo "wg-quick save wg0"
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    fi
 }
 
 # ==============================================================================
