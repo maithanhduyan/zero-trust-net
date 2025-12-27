@@ -1,0 +1,6 @@
+export { default as DashboardPage } from './DashboardPage'
+export { default as NodesPage } from './NodesPage'
+export { default as ClientsPage } from './ClientsPage'
+export { default as UsersPage } from './UsersPage'
+export { default as PoliciesPage } from './PoliciesPage'
+export { default as EventsPage } from './EventsPage'

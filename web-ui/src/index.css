@@ -1,0 +1,173 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+:root {
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+    color-scheme: dark;
+    color: rgba(255, 255, 255, 0.87);
+    background-color: #020617;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1e293b;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+/* Sigma container styles */
+.sigma-container {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+}
+
+/* Graph node animations */
+@keyframes node-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+.node-warning {
+    animation: node-pulse 2s ease-in-out infinite;
+}
+
+/* Status indicators */
+.status-dot {
+    @apply w-2 h-2 rounded-full;
+}
+
+.status-active {
+    @apply bg-green-500 shadow-lg shadow-green-500/50;
+}
+
+.status-pending {
+    @apply bg-yellow-500 shadow-lg shadow-yellow-500/50;
+}
+
+.status-suspended {
+    @apply bg-orange-500 shadow-lg shadow-orange-500/50;
+}
+
+.status-revoked {
+    @apply bg-red-500 shadow-lg shadow-red-500/50;
+}
+
+/* Card styles */
+.card {
+    @apply bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-xl;
+}
+
+.card-header {
+    @apply px-6 py-4 border-b border-slate-700/50;
+}
+
+.card-body {
+    @apply p-6;
+}
+
+/* Button styles */
+.btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2;
+}
+
+.btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white;
+}
+
+.btn-secondary {
+    @apply bg-slate-700 hover:bg-slate-600 text-white;
+}
+
+.btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white;
+}
+
+.btn-success {
+    @apply bg-green-600 hover:bg-green-700 text-white;
+}
+
+.btn-ghost {
+    @apply bg-transparent hover:bg-slate-700/50 text-slate-300;
+}
+
+/* Input styles */
+.input {
+    @apply w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+/* Table styles */
+.table {
+    @apply w-full text-left;
+}
+
+.table th {
+    @apply px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider bg-slate-800/30;
+}
+
+.table td {
+    @apply px-4 py-3 text-sm text-slate-300 border-t border-slate-700/50;
+}
+
+.table tr:hover td {
+    @apply bg-slate-800/30;
+}
+
+/* Badge styles */
+.badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-success {
+    @apply bg-green-500/20 text-green-400;
+}
+
+.badge-warning {
+    @apply bg-yellow-500/20 text-yellow-400;
+}
+
+.badge-danger {
+    @apply bg-red-500/20 text-red-400;
+}
+
+.badge-info {
+    @apply bg-blue-500/20 text-blue-400;
+}
+
+.badge-neutral {
+    @apply bg-slate-500/20 text-slate-400;
+}
