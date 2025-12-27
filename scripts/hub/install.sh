@@ -1,13 +1,13 @@
 #!/bin/bash
 # ==============================================================================
 #  ZERO TRUST NETWORK - HUB INSTALLER (Production Ready)
-#  
+#
 #  Cài đặt Control Plane + WireGuard Hub trên Ubuntu Server
 #  Phiên bản: 2.1.0
-#  
+#
 #  Usage:
 #    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netwoking/main/scripts/hub/install.sh | sudo bash
-#    
+#
 #    Hoặc với cấu hình tùy chỉnh:
 #    sudo HUB_PORT=8000 WG_PORT=51820 ./install.sh
 #
@@ -20,7 +20,7 @@ set -e
 # ==============================================================================
 INSTALL_DIR="${INSTALL_DIR:-/opt/zero-trust}"
 REPO_URL="https://github.com/maithanhduyan/zero-trust-netwoking.git"
-BRANCH="${BRANCH:-main}"
+BRANCH="${BRANCH:-master}"
 
 # Network Configuration
 WG_OVERLAY_NETWORK="${WG_OVERLAY_NETWORK:-10.10.0.0/24}"
@@ -96,7 +96,7 @@ preflight_checks() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         log "Hệ điều hành: $PRETTY_NAME"
-        
+
         if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
             warn "Script được thiết kế cho Ubuntu/Debian. Có thể không hoạt động đúng trên $ID"
         fi
@@ -105,7 +105,7 @@ preflight_checks() {
     # Check architecture
     ARCH=$(uname -m)
     log "Kiến trúc: $ARCH"
-    
+
     # Check memory
     TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
     if [ "$TOTAL_MEM" -lt 512 ]; then
@@ -127,7 +127,7 @@ preflight_checks() {
                 curl -4 -s --max-time 5 icanhazip.com 2>/dev/null || \
                 curl -4 -s --max-time 5 api.ipify.org 2>/dev/null || \
                 hostname -I | awk '{print $1}')
-    
+
     if [ -z "$PUBLIC_IP" ]; then
         error "Không thể xác định IP public"
     fi
@@ -162,7 +162,7 @@ install_dependencies() {
         python3-pip \
         python3-venv \
         >/dev/null 2>&1
-    
+
     success "System packages đã cài đặt"
 
     # Install uv (fast Python package manager)
@@ -298,9 +298,9 @@ install_control_plane() {
 
     log "Tạo Python virtual environment..."
     cd "$INSTALL_DIR/control-plane"
-    
+
     export PATH="$HOME/.local/bin:$PATH"
-    
+
     if command -v uv &> /dev/null; then
         uv venv .venv >/dev/null 2>&1 || python3 -m venv .venv
         source .venv/bin/activate
@@ -486,7 +486,7 @@ configure_firewall() {
         ufw allow 22/tcp comment "SSH" >/dev/null 2>&1 || true
         ufw allow ${WG_PORT}/udp comment "WireGuard VPN" >/dev/null 2>&1 || true
         ufw allow ${HUB_API_PORT}/tcp comment "Zero Trust API" >/dev/null 2>&1 || true
-        
+
         if ! ufw status | grep -q "active"; then
             echo "y" | ufw enable >/dev/null 2>&1 || true
         fi
@@ -574,7 +574,7 @@ EOF
 # ==============================================================================
 main() {
     print_banner
-    
+
     preflight_checks
     install_dependencies
     setup_directories
