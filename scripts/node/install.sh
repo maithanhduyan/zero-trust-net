@@ -6,7 +6,7 @@
 #  Phiên bản: 2.1.0
 #
 #  Usage:
-#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netwoking/main/scripts/node/install.sh | \
+#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netscripts/node/install.sh | \
 #      sudo HUB_URL=http://hub-ip:8000 ROLE=app bash
 #
 #  Hoặc với options:

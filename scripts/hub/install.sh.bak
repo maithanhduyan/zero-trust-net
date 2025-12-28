@@ -1,11 +1,11 @@
 #!/bin/bash
 # ==============================================================================
 #  ZERO TRUST CONTROL PLANE - AUTOMATED INSTALLER
-#  Repository: https://github.com/maithanhduyan/zero-trust-netwoking
+#  Repository: https://github.com/maithanhduyan/zero-trust-net
 # ==============================================================================
 #
 #  Usage:
-#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netwoking/main/scripts/install.sh | sudo bash
+#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-net/main/scripts/install.sh | sudo bash
 #
 #    Or download and run:
 #    chmod +x install.sh && sudo ./install.sh
@@ -17,7 +17,7 @@ set -e
 # --- CẤU HÌNH ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/zero-trust-control-plane}"
-REPO_URL="https://github.com/maithanhduyan/zero-trust-netwoking.git"
+REPO_URL="https://github.com/maithanhduyan/zero-trust-net.git"
 BRANCH="${BRANCH:-main}"
 WG_ADDRESS="10.10.0.1"
 WG_PORT="51820"

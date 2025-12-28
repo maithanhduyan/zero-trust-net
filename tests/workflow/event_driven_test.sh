@@ -421,7 +421,7 @@ test_client_device_policy() {
 test_ztctl_cli() {
     log_section "Testing ztctl CLI"
 
-    local ztctl="/home/zero-trust-netwoking/scripts/ztctl"
+    local ztctl="/home/zero-trust-net/scripts/ztctl"
 
     if [ ! -f "$ztctl" ]; then
         log_fail "ztctl not found at $ztctl"

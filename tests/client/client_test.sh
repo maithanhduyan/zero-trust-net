@@ -2,7 +2,7 @@
 # tests/install/new_install_test.sh
 
 # Event Bus and Domain Events Test Script
-cd /home/zero-trust-netwoking/control-plane && python -c "
+cd /home/zero-trust-net/control-plane && python -c "
 from core.events import event_bus, publish, Event
 from core.domain_events import EventTypes
 from core.event_handlers import register_event_handlers
@@ -38,7 +38,7 @@ print('\\nAll tests passed!')
 "
 
 # deploy lên production:
-rsync -av --exclude='__pycache__' --exclude='.venv' --exclude='*.pyc' /home/zero-trust-netwoking/control-plane/ /opt/zero-trust/control-plane/ && echo "Files synced successfully"
+rsync -av --exclude='__pycache__' --exclude='.venv' --exclude='*.pyc' /home/zero-trust-net/control-plane/ /opt/zero-trust/control-plane/ && echo "Files synced successfully"
 
 
 #

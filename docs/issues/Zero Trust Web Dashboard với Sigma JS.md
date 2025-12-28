@@ -1,60 +1,60 @@
 Research API and data for dashboard
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1)
+Read [](file:///home/zero-trust-net/control-plane/api/v1)
 
-Read [](file:///home/zero-trust-netwoking/control-plane/database/models.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/database/models.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/web-ui)
+Read [](file:///home/zero-trust-net/web-ui)
 
 Searched for files matching `**/.env*`, 2 matches
 
-Read [](file:///home/zero-trust-netwoking/control-plane/database/models.py#200-200), lines 200 to 450
+Read [](file:///home/zero-trust-net/control-plane/database/models.py#200-200), lines 200 to 450
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/admin.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/api/v1/admin.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/agent.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/api/v1/agent.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/client.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/api/v1/client.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/database/models.py#450-450), lines 450 to 692
+Read [](file:///home/zero-trust-net/control-plane/database/models.py#450-450), lines 450 to 692
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/admin.py#200-200), lines 200 to 400
+Read [](file:///home/zero-trust-net/control-plane/api/v1/admin.py#200-200), lines 200 to 400
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/endpoints.py)
+Read [](file:///home/zero-trust-net/control-plane/api/v1/endpoints.py)
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/user_policy.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/api/v1/user_policy.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/websocket.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/api/v1/websocket.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/admin.py#400-400), lines 400 to 848
+Read [](file:///home/zero-trust-net/control-plane/api/v1/admin.py#400-400), lines 400 to 848
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/user_policy.py#200-200), lines 200 to 486
+Read [](file:///home/zero-trust-net/control-plane/api/v1/user_policy.py#200-200), lines 200 to 486
 
-Read [](file:///home/zero-trust-netwoking/.env.example)
+Read [](file:///home/zero-trust-net/.env.example)
 
-Read [](file:///home/zero-trust-netwoking/web-ui/index.html)
+Read [](file:///home/zero-trust-net/web-ui/index.html)
 
-Read [](file:///home/zero-trust-netwoking/control-plane/config.py#1-1), lines 1 to 100
+Read [](file:///home/zero-trust-net/control-plane/config.py#1-1), lines 1 to 100
 
-Read [](file:///home/zero-trust-netwoking/web-ui/public)
+Read [](file:///home/zero-trust-net/web-ui/public)
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/websocket.py#200-200), lines 200 to 337
+Read [](file:///home/zero-trust-net/control-plane/api/v1/websocket.py#200-200), lines 200 to 337
 
-Read [](file:///home/zero-trust-netwoking/control-plane/main.py#1-1), lines 1 to 100
+Read [](file:///home/zero-trust-net/control-plane/main.py#1-1), lines 1 to 100
 
-Read [](file:///home/zero-trust-netwoking/control-plane/main.py#100-100), lines 100 to 262
+Read [](file:///home/zero-trust-net/control-plane/main.py#100-100), lines 100 to 262
 
-Read [](file:///home/zero-trust-netwoking/control-plane/schemas/node.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/schemas/node.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/schemas/node.py#200-200), lines 200 to 342
+Read [](file:///home/zero-trust-net/control-plane/schemas/node.py#200-200), lines 200 to 342
 
-Read [](file:///home/zero-trust-netwoking/control-plane/schemas/user_policy.py#1-1), lines 1 to 150
+Read [](file:///home/zero-trust-net/control-plane/schemas/user_policy.py#1-1), lines 1 to 150
 
 Searched for regex `trust_score|TrustHistory` (`**/control-plane/core/**`), 20 results
 
-Read [](file:///home/zero-trust-netwoking/control-plane/core/domain_events.py#1-1), lines 1 to 100
+Read [](file:///home/zero-trust-net/control-plane/core/domain_events.py#1-1), lines 1 to 100
 
-Read [](file:///home/zero-trust-netwoking/control-plane/schemas/user_policy.py#150-150), lines 150 to 256
+Read [](file:///home/zero-trust-net/control-plane/schemas/user_policy.py#150-150), lines 150 to 256
 
 ## Plan: Zero Trust Web Dashboard với Sigma.js
 

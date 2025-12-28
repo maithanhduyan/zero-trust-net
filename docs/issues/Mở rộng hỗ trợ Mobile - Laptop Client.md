@@ -2,39 +2,39 @@ Tôi sẽ nghiên cứu cấu trúc hiện tại để lên kế hoạch mở r�
 
 Research client device support
 
-Read [](file:///home/zero-trust-netwoking/control-plane/schemas/node.py#1-1), lines 1 to 100
+Read [](file:///home/zero-trust-net/control-plane/schemas/node.py#1-1), lines 1 to 100
 
-Read [](file:///home/zero-trust-netwoking/control-plane/database/models.py#1-1), lines 1 to 150
+Read [](file:///home/zero-trust-net/control-plane/database/models.py#1-1), lines 1 to 150
 
-Read [](file:///home/zero-trust-netwoking/control-plane/api/v1/agent.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/api/v1/agent.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/core/wireguard_service.py)
+Read [](file:///home/zero-trust-net/control-plane/core/wireguard_service.py)
 
-Read [](file:///home/zero-trust-netwoking/agent/wireguard/config_builder.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/agent/wireguard/config_builder.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/schemas/config.py#1-1), lines 1 to 150
+Read [](file:///home/zero-trust-net/control-plane/schemas/config.py#1-1), lines 1 to 150
 
-Read [](file:///home/zero-trust-netwoking/control-plane/core/policy_engine.py#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/control-plane/core/policy_engine.py#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/scripts/hub/install.sh#1-1), lines 1 to 200
+Read [](file:///home/zero-trust-net/scripts/hub/install.sh#1-1), lines 1 to 200
 
-Read [](file:///home/zero-trust-netwoking/control-plane/config.py#1-1), lines 1 to 100
+Read [](file:///home/zero-trust-net/control-plane/config.py#1-1), lines 1 to 100
 
-Read [](file:///home/zero-trust-netwoking/scripts/hub/install.sh#200-200), lines 200 to 400
+Read [](file:///home/zero-trust-net/scripts/hub/install.sh#200-200), lines 200 to 400
 
-Read [](file:///home/zero-trust-netwoking/control-plane/core/policy_engine.py#200-200), lines 200 to 347
+Read [](file:///home/zero-trust-net/control-plane/core/policy_engine.py#200-200), lines 200 to 347
 
-Read [](file:///home/zero-trust-netwoking/control-plane/schemas/node.py#100-100), lines 100 to 199
+Read [](file:///home/zero-trust-net/control-plane/schemas/node.py#100-100), lines 100 to 199
 
-Read [](file:///home/zero-trust-netwoking/scripts/hub/install.sh#400-400), lines 400 to 590
+Read [](file:///home/zero-trust-net/scripts/hub/install.sh#400-400), lines 400 to 590
 
-Read [](file:///home/zero-trust-netwoking/policies/global.yaml#1-1), lines 1 to 100
+Read [](file:///home/zero-trust-net/policies/global.yaml#1-1), lines 1 to 100
 
-Read [](file:///home/zero-trust-netwoking/agent/wireguard/manager.py#1-1), lines 1 to 50
+Read [](file:///home/zero-trust-net/agent/wireguard/manager.py#1-1), lines 1 to 50
 
-Read [](file:///home/zero-trust-netwoking/scripts/node/install.sh#1-1), lines 1 to 150
+Read [](file:///home/zero-trust-net/scripts/node/install.sh#1-1), lines 1 to 150
 
-Read [](file:///home/zero-trust-netwoking/control-plane/core/ipam.py#1-1), lines 1 to 100
+Read [](file:///home/zero-trust-net/control-plane/core/ipam.py#1-1), lines 1 to 100
 
 ## Plan: Mở rộng hỗ trợ Mobile/Laptop Client
 

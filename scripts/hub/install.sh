@@ -6,7 +6,7 @@
 #  Phiên bản: 2.1.0
 #
 #  Usage:
-#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netwoking/main/scripts/hub/install.sh | sudo bash
+#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netscripts/hub/install.sh | sudo bash
 #
 #    Hoặc với cấu hình tùy chỉnh:
 #    sudo HUB_PORT=8000 WG_PORT=51820 ./install.sh
@@ -19,7 +19,7 @@ set -e
 # CẤU HÌNH MẶC ĐỊNH (có thể override qua environment variables)
 # ==============================================================================
 INSTALL_DIR="${INSTALL_DIR:-/opt/zero-trust}"
-REPO_URL="https://github.com/maithanhduyan/zero-trust-netwoking.git"
+REPO_URL="https://github.com/maithanhduyan/zero-trust-net
 BRANCH="${BRANCH:-master}"
 
 # Network Configuration
@@ -383,7 +383,7 @@ create_systemd_service() {
     cat > /etc/systemd/system/zero-trust-control-plane.service << EOF
 [Unit]
 Description=Zero Trust Control Plane API
-Documentation=https://github.com/maithanhduyan/zero-trust-netwoking
+Documentation=https://github.com/maithanhduyan/zero-trust-net
 After=network.target wg-quick@wg0.service
 Wants=wg-quick@wg0.service
 

@@ -133,7 +133,7 @@ if [ -d /etc/wireguard ]; then
         cp -r /etc/wireguard/* "$BACKUP_DIR/" 2>/dev/null || true
         log "Đã backup WireGuard tại: $BACKUP_DIR"
     fi
-    
+
     if [ "$KEEP_KEYS" = "true" ]; then
         run_cmd "Xóa WireGuard config (giữ keys)" "rm -f /etc/wireguard/wg0.conf"
         log "Đã giữ lại keys trong /etc/wireguard/"
@@ -156,7 +156,7 @@ if [ -d "$INSTALL_DIR" ]; then
 fi
 
 # Also check legacy paths
-for legacy_dir in "/home/zero-trust-netwoking" "/home/zero-trust-networking"; do
+for legacy_dir in "/home/zero-trust-net" "/home/zero-trust-networking"; do
     if [ -d "$legacy_dir" ]; then
         run_cmd "Xóa legacy directory $legacy_dir" "rm -rf $legacy_dir"
     fi

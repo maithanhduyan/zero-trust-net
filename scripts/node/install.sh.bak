@@ -6,7 +6,7 @@
 #
 #  Usage:
 #    # Từ Hub server, copy command này sang node cần cài:
-#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netwoking/main/scripts/install-agent.sh | \
+#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-net/main/scripts/install-agent.sh | \
 #      sudo HUB_URL="http://<HUB_IP>:8000" \
 #           HUB_ENDPOINT="<HUB_IP>:51820" \
 #           HUB_PUBLIC_KEY="<HUB_PUBLIC_KEY>" \
@@ -28,7 +28,7 @@ set -e
 # --- CẤU HÌNH ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/zero-trust-agent}"
-REPO_URL="https://github.com/maithanhduyan/zero-trust-netwoking.git"
+REPO_URL="https://github.com/maithanhduyan/zero-trust-net.git"
 BRANCH="${BRANCH:-master}"
 
 # Required environment variables (must be set by user)
