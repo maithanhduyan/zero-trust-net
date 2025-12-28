@@ -12,7 +12,7 @@
 #   - Fail2ban
 #   - UFW rules
 #   - Audit logging
-#   - Tất cả files trong /home/zero-trust-networking/
+#   - Tất cả files trong /home/zero-trust-net/
 #
 # Sử dụng:
 #   ./uninstall.sh              # Interactive mode (hỏi xác nhận)
@@ -32,7 +32,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Configuration
-PROJECT_DIR="/home/zero-trust-networking"
+PROJECT_DIR="/home/zero-trust-net"
 PROJECT_DIR_ALT="/home/zero-trust-net"  # Typo version
 
 SUDO=""

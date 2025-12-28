@@ -282,7 +282,7 @@ inbound:
 ## File Structure
 
 ```
-zero-trust-networking/
+zero-trust-net/
 ├── control-plane/           # FastAPI Control Plane
 │   ├── main.py
 │   ├── config.py

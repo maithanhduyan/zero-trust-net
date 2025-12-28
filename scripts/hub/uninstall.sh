@@ -156,7 +156,7 @@ if [ -d "$INSTALL_DIR" ]; then
 fi
 
 # Also check legacy paths
-for legacy_dir in "/home/zero-trust-net" "/home/zero-trust-networking"; do
+for legacy_dir in "/home/zero-trust-net" "/home/zero-trust-net"; do
     if [ -d "$legacy_dir" ]; then
         run_cmd "Xóa legacy directory $legacy_dir" "rm -rf $legacy_dir"
     fi

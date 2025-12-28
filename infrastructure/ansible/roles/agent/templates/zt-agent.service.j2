@@ -1,7 +1,7 @@
 # {{ ansible_managed }}
 [Unit]
 Description=Zero Trust Network Agent
-Documentation=https://github.com/your-org/zero-trust-networking
+Documentation=https://github.com/your-org/zero-trust-net
 After=network.target network-online.target wg-quick@{{ wireguard_interface }}.service
 Wants=network-online.target
 Requires=wg-quick@{{ wireguard_interface }}.service

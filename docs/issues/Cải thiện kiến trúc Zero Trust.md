@@ -1,4 +1,4 @@
-Dựa trên tài liệu NIST SP 800-207 và cấu trúc dự án bạn đã chia sẻ, tôi đánh giá dự án `zero-trust-networking` của bạn là một sự khởi đầu rất bài bản, bám sát các thành phần logic cốt lõi của kiến trúc Zero Trust (ZTA).
+Dựa trên tài liệu NIST SP 800-207 và cấu trúc dự án bạn đã chia sẻ, tôi đánh giá dự án `zero-trust-net` của bạn là một sự khởi đầu rất bài bản, bám sát các thành phần logic cốt lõi của kiến trúc Zero Trust (ZTA).
 
 Dưới đây là đánh giá chi tiết và các điểm cần cải thiện để nâng tầm dự án từ một giải pháp "VPN thông minh" thành một kiến trúc Zero Trust hoàn chỉnh theo tiêu chuẩn NIST.
 

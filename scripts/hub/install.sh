@@ -6,7 +6,7 @@
 #  Phiên bản: 2.1.0
 #
 #  Usage:
-#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-netscripts/hub/install.sh | sudo bash
+#    curl -sL https://raw.githubusercontent.com/maithanhduyan/zero-trust-net/scripts/hub/install.sh | sudo bash
 #
 #    Hoặc với cấu hình tùy chỉnh:
 #    sudo HUB_PORT=8000 WG_PORT=51820 ./install.sh
@@ -19,7 +19,7 @@ set -e
 # CẤU HÌNH MẶC ĐỊNH (có thể override qua environment variables)
 # ==============================================================================
 INSTALL_DIR="${INSTALL_DIR:-/opt/zero-trust}"
-REPO_URL="https://github.com/maithanhduyan/zero-trust-net
+REPO_URL="https://github.com/maithanhduyan/zero-trust-net"
 BRANCH="${BRANCH:-master}"
 
 # Network Configuration
@@ -97,7 +97,7 @@ preflight_checks() {
         . /etc/os-release
         log "Hệ điều hành: $PRETTY_NAME"
 
-        if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
+        if [ "$ID" != "ubuntu" ] && [ "$ID" != "debian" ]; then
             warn "Script được thiết kế cho Ubuntu/Debian. Có thể không hoạt động đúng trên $ID"
         fi
     fi
@@ -303,7 +303,7 @@ install_control_plane() {
 
     if command -v uv &> /dev/null; then
         uv venv .venv >/dev/null 2>&1 || python3 -m venv .venv
-        source .venv/bin/activate
+        . .venv/bin/activate
         uv pip install -q \
             fastapi \
             "uvicorn[standard]" \
@@ -317,7 +317,7 @@ install_control_plane() {
             2>/dev/null
     else
         python3 -m venv .venv
-        source .venv/bin/activate
+        . .venv/bin/activate
         pip install -q \
             fastapi \
             "uvicorn[standard]" \

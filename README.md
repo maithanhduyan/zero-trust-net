@@ -88,14 +88,14 @@ Khi triển khai ZTA, cần lưu ý:
 
 ---
 *Tài liệu này tóm tắt các điểm chính yếu từ NIST SP 800-207 để hỗ trợ việc thiết kế hệ thống bảo mật hiện đại.*
-Dựa trên nguyên lý **NIST SP 800-207** và yêu cầu tự chủ (Self-hosted Custom WireGuard) mà bạn đã chọn, đây là cấu trúc thư mục chuẩn cho dự án `zero-trust-networking`.
+Dựa trên nguyên lý **NIST SP 800-207** và yêu cầu tự chủ (Self-hosted Custom WireGuard) mà bạn đã chọn, đây là cấu trúc thư mục chuẩn cho dự án `zero-trust-net`.
 
 Cấu trúc này được thiết kế theo mô hình **Monorepo** để dễ quản lý phiên bản đồng nhất giữa Control Plane (Server) và Agent (Client).
 
 ### Cấu trúc thư mục tổng quát
 
 ```text
-zero-trust-networking/
+zero-trust-net/
 ├── control-plane/           # (NÃO BỘ) Server quản lý trung tâm - FastAPI
 │   ├── api/                 # REST API endpoints (Agent & Admin)
 │   ├── core/                # Logic nghiệp vụ: Trust Engine, IPAM, Policy
@@ -608,8 +608,8 @@ ORDER BY calculated_at DESC;
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/zero-trust-networking.git
-cd zero-trust-networking
+git clone https://github.com/your-org/zero-trust-net.git
+cd zero-trust-net
 
 # Option 1: Script installation
 # Trên Hub server:
