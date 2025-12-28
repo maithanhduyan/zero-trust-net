@@ -39,7 +39,7 @@ export default function Layout() {
                             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
                                 <Shield className="w-5 h-5 text-white" />
                             </div>
-                            <span className="font-bold text-white">Zero Trust</span>
+                            <span className="font-bold text-white">Zero Trust Net</span>
                         </div>
                     )}
                     <button
@@ -59,8 +59,8 @@ export default function Layout() {
                                 key={item.name}
                                 to={item.href}
                                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                                     }`}
                                 title={!sidebarOpen ? item.name : undefined}
                             >

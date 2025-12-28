@@ -1,0 +1,95 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Kill Port 3000",
+            "type": "shell",
+            "command": "fuser -k 3000/tcp 2>/dev/null || echo 'Port 3000 is free'",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Kill Port 8000",
+            "type": "shell",
+            "command": "fuser -k 8000/tcp 2>/dev/null || echo 'Port 8000 is free'",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Kill All Dev Ports",
+            "type": "shell",
+            "command": "fuser -k 3000/tcp 2>/dev/null; fuser -k 8000/tcp 2>/dev/null; echo '✓ Ports 3000, 8000 cleared'",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Stop Control Plane Service",
+            "type": "shell",
+            "command": "sudo systemctl stop zero-trust-control-plane 2>/dev/null || true; echo '✓ Service stopped'",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Start Control Plane (Native)",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/control-plane && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
+            "problemMatcher": [],
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dev-servers"
+            }
+        },
+        {
+            "label": "Start Web Dashboard",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/web-ui && npm run dev",
+            "problemMatcher": [],
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dev-servers"
+            }
+        },
+        {
+            "label": "Initial Dev Environment Web Dashboard",
+            "type": "shell",
+            "command": "cd ${workspaceFolder}/web-ui && npm install",
+            "problemMatcher": [],
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "dev-servers"
+            }
+        },
+        {
+            "label": "🚀 Start Full Dev Environment",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Kill All Dev Ports",
+                "Stop Control Plane Service",
+                "Start Control Plane (Native)",
+                "Start Web Dashboard"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always"
+            }
+        }
+    ]
+}

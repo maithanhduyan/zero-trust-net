@@ -12,7 +12,7 @@ venv
 *.swo
 .DS_Store
 .idea
-.vscode
+# .vscode
 *.egg-info
 dist
 build
