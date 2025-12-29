@@ -1,0 +1,46 @@
+[Unit]
+Description=Zero Trust Hub Agent
+Documentation=https://github.com/your-org/zero-trust-net
+After=network-online.target wg-quick@{{ wireguard_interface }}.service
+Wants=network-online.target
+Requires=wg-quick@{{ wireguard_interface }}.service
+
+[Service]
+Type=simple
+User={{ hub_agent_user }}
+Group={{ hub_agent_group }}
+WorkingDirectory={{ hub_agent_dir }}
+
+# Load environment from config file
+EnvironmentFile={{ hub_agent_dir }}/config.env
+
+# Run Hub Agent
+ExecStart={{ hub_agent_dir }}/venv/bin/python3 {{ hub_agent_dir }}/hub_agent.py \
+    --control-plane-url ${CONTROL_PLANE_URL} \
+    --api-key ${HUB_API_KEY} \
+    --interface ${WIREGUARD_INTERFACE} \
+    --config-dir ${WIREGUARD_CONFIG_DIR} \
+    --status-interval ${STATUS_INTERVAL} \
+    --log-level ${LOG_LEVEL}
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=append:/var/log/hub-agent.log
+StandardError=append:/var/log/hub-agent.log
+
+# Capabilities needed for WireGuard and iptables
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

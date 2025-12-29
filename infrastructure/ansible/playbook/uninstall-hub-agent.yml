@@ -1,0 +1,53 @@
+---
+# infrastructure/ansible/playbook/uninstall-hub-agent.yml
+# Remove Hub Agent from Hub server
+
+- name: Uninstall Zero Trust Hub Agent
+  hosts: hub
+  become: true
+
+  vars:
+    hub_agent_dir: /opt/hub-agent
+
+  tasks:
+    - name: Stop Hub Agent service
+      systemd:
+        name: hub-agent
+        state: stopped
+      ignore_errors: yes
+
+    - name: Disable Hub Agent service
+      systemd:
+        name: hub-agent
+        enabled: no
+      ignore_errors: yes
+
+    - name: Remove Hub Agent systemd service
+      file:
+        path: /etc/systemd/system/hub-agent.service
+        state: absent
+      notify: Reload systemd
+
+    - name: Remove Hub Agent directory
+      file:
+        path: "{{ hub_agent_dir }}"
+        state: absent
+
+    - name: Remove Hub Agent log file
+      file:
+        path: /var/log/hub-agent.log
+        state: absent
+
+    - name: Remove logrotate config
+      file:
+        path: /etc/logrotate.d/hub-agent
+        state: absent
+
+    - name: Display uninstall complete
+      debug:
+        msg: "Hub Agent has been removed from this system"
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes

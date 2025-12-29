@@ -145,39 +145,66 @@ class WebSocketHandler:
             return
 
         msg_type = message.get("type")
-        command_id = message.get("command_id")
-        payload = message.get("payload", {})
+        command_id = message.get("id")  # Control plane uses "id" not "command_id"
 
-        logger.debug(f"Received: {msg_type} (id={command_id})")
+        # Handle different message types
+        if msg_type == "welcome":
+            logger.info("Received welcome from Control Plane")
+            return
 
-        # Route to command executor
-        try:
-            result = await self.command_executor.execute(msg_type, payload)
+        if msg_type == "ping":
+            await self._handle_ping(message)
+            return
 
-            # Send response
-            response = {
-                "type": "command_result",
-                "command_id": command_id,
-                "success": result.get("success", True),
-                "data": result.get("data"),
-                "error": result.get("error"),
+        if msg_type == "command":
+            # Extract actual command from "command" field
+            command = message.get("command")
+            payload = message.get("payload", {})
+
+            logger.debug(f"Received command: {command} (id={command_id})")
+
+            # Route to command executor
+            try:
+                result = await self.command_executor.execute(command, payload)
+
+                # Send response
+                response = {
+                    "type": "command_result",
+                    "command_id": command_id,
+                    "success": result.get("success", True),
+                    "data": result.get("data"),
+                    "error": result.get("error"),
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+
+                if self._ws:
+                    await self._ws.send(json.dumps(response))
+
+            except Exception as e:
+                logger.error(f"Command execution error: {e}")
+
+                # Send error response
+                error_response = {
+                    "type": "command_result",
+                    "command_id": command_id,
+                    "success": False,
+                    "error": str(e),
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+                if self._ws:
+                    await self._ws.send(json.dumps(error_response))
+            return
+
+        logger.warning(f"Unknown message type: {msg_type}")
+
+    async def _handle_ping(self, message: dict):
+        """Handle ping message"""
+        if self._ws:
+            pong = {
+                "type": "pong",
                 "timestamp": datetime.utcnow().isoformat(),
             }
-
-            if self._ws:
-                await self._ws.send(json.dumps(response))
-
-        except Exception as e:
-            logger.error(f"Command execution error: {e}")
-
-            # Send error response
-            error_response = {
-                "type": "command_result",
-                "command_id": command_id,
-                "success": False,
-                "error": str(e),
-                "timestamp": datetime.utcnow().isoformat(),
-            }
+            await self._ws.send(json.dumps(pong))
 
             if self._ws:
                 await self._ws.send(json.dumps(error_response))

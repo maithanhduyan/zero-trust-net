@@ -12,3 +12,15 @@ wireguard_config_template: wg-hub.conf.j2
 # Control Plane runs on hub
 install_caddy: true
 control_plane_database_url: "sqlite:///./data/zerotrust.db"
+
+# Hub Agent Configuration
+hub_agent_dir: /opt/hub-agent
+hub_agent_user: root
+hub_agent_group: root
+control_plane_host: localhost
+control_plane_port: 8000
+control_plane_url: "ws://{{ control_plane_host }}:{{ control_plane_port }}/api/v1/ws/hub"
+wireguard_interface: wg0
+wireguard_config_dir: /etc/wireguard
+status_report_interval: 30
+log_level: INFO

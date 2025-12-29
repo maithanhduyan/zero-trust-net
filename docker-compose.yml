@@ -7,9 +7,21 @@ services:
       dockerfile: infrastructure/docker/Dockerfile.control
     restart: always
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "8000:8000" # Direct access for development
+    expose:
+      - "8000"
     env_file:
       - .env
+    environment:
+      - HUB_AGENT_API_KEY=${HUB_AGENT_API_KEY}
+    volumes:
+      - zt-data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.control-plane.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.control-plane.entrypoints=websecure"
+      - "traefik.http.routers.control-plane.tls.certresolver=letsencrypt"
+      - "traefik.http.services.control-plane.loadbalancer.server.port=8000"
     networks:
       - zt-net
 
@@ -70,38 +82,13 @@ services:
     networks:
       - zt-net
 
-  wireguard:
-    image: linuxserver/wireguard:latest
-    container_name: wireguard
-    env_file:
-      - .env
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=UTC
-      - SERVERURL=${SERVERURL:-"your.domain.com"} # replace with your domain or public IP
-      - SERVERPORT=51820
-      - PEERS=10
-      - PEERDNS=1.1.1.1,8.8.8.8
-      - ALLOWEDIPS=0.0.0.0/0
-      - LOG_CONFS=true
-    volumes:
-      - ./wireguard/config:/config
-      - /lib/modules:/lib/modules:ro
-    ports:
-      - 51820:51820/udp
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
-    restart: unless-stopped
-    networks:
-      - zt-net
-
 networks:
   zt-net:
     external: true
+
+volumes:
+  zt-data:
+    driver: local
 
 # Tạo network web nếu chưa có
 # docker network create zt-net

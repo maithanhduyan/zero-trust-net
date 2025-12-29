@@ -161,9 +161,17 @@ install_dependencies() {
         python3 \
         python3-pip \
         python3-venv \
+        ansible-core \
+        sshpass \
         >/dev/null 2>&1
 
     success "System packages đã cài đặt"
+
+    # Verify Ansible
+    if command -v ansible &> /dev/null; then
+        ANSIBLE_VERSION=$(ansible --version | head -1)
+        success "Ansible: $ANSIBLE_VERSION"
+    fi
 
     # Install uv (fast Python package manager)
     if ! command -v uv &> /dev/null; then
@@ -453,10 +461,107 @@ EOF
 }
 
 # ==============================================================================
-# PHASE 6: INSTALL CLI TOOL
+# PHASE 6: INSTALL HUB AGENT
+# ==============================================================================
+install_hub_agent() {
+    print_phase "6" "CÀI ĐẶT HUB AGENT"
+
+    HUB_AGENT_DIR="$INSTALL_DIR/hub-agent"
+
+    log "Tạo thư mục Hub Agent..."
+    mkdir -p "$HUB_AGENT_DIR"
+
+    log "Sao chép source code Hub Agent..."
+    cp -r "$INSTALL_DIR/agent/hub/"* "$HUB_AGENT_DIR/"
+
+    log "Tạo Python virtual environment cho Hub Agent..."
+    python3 -m venv "$HUB_AGENT_DIR/venv"
+
+    log "Cài đặt dependencies..."
+    "$HUB_AGENT_DIR/venv/bin/pip" install -q websockets
+
+    # Generate Hub Agent API key
+    HUB_AGENT_API_KEY=$(openssl rand -hex 32)
+
+    # Save API key to control plane .env
+    echo "HUB_AGENT_API_KEY=${HUB_AGENT_API_KEY}" >> "$INSTALL_DIR/control-plane/.env"
+
+    log "Tạo cấu hình Hub Agent..."
+    cat > "$HUB_AGENT_DIR/config.env" << EOF
+# Hub Agent Configuration
+CONTROL_PLANE_URL=ws://localhost:${HUB_API_PORT}/api/v1/ws/hub
+HUB_API_KEY=${HUB_AGENT_API_KEY}
+WIREGUARD_INTERFACE=wg0
+WIREGUARD_CONFIG_DIR=/etc/wireguard
+STATUS_INTERVAL=30
+LOG_LEVEL=INFO
+EOF
+    chmod 600 "$HUB_AGENT_DIR/config.env"
+
+    log "Tạo systemd service cho Hub Agent..."
+    cat > /etc/systemd/system/hub-agent.service << EOF
+[Unit]
+Description=Zero Trust Hub Agent
+Documentation=https://github.com/maithanhduyan/zero-trust-net
+After=network.target zero-trust-control-plane.service wg-quick@wg0.service
+Wants=zero-trust-control-plane.service wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=${HUB_AGENT_DIR}
+EnvironmentFile=${HUB_AGENT_DIR}/config.env
+
+ExecStart=${HUB_AGENT_DIR}/venv/bin/python3 ${HUB_AGENT_DIR}/hub_agent.py \\
+    --control-plane-url \${CONTROL_PLANE_URL} \\
+    --api-key \${HUB_API_KEY} \\
+    --interface \${WIREGUARD_INTERFACE} \\
+    --config-dir \${WIREGUARD_CONFIG_DIR} \\
+    --status-interval \${STATUS_INTERVAL} \\
+    --log-level \${LOG_LEVEL}
+
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Logging
+StandardOutput=append:${LOG_DIR}/hub-agent.log
+StandardError=append:${LOG_DIR}/hub-agent.error.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable hub-agent >/dev/null 2>&1
+
+    # Wait for Control Plane to be ready before starting Hub Agent
+    log "Đợi Control Plane sẵn sàng..."
+    sleep 3
+    systemctl restart zero-trust-control-plane
+    sleep 5
+
+    systemctl start hub-agent
+
+    if systemctl is-active --quiet hub-agent; then
+        success "Hub Agent đang chạy"
+    else
+        warn "Hub Agent chưa khởi động. Kiểm tra: journalctl -u hub-agent -f"
+    fi
+
+    # Save API key for reference
+    echo "$HUB_AGENT_API_KEY" > "$CONFIG_DIR/hub-agent.key"
+    chmod 600 "$CONFIG_DIR/hub-agent.key"
+    success "Hub Agent API Key lưu tại: $CONFIG_DIR/hub-agent.key"
+}
+
+# ==============================================================================
+# PHASE 7: INSTALL CLI TOOL
 # ==============================================================================
 install_cli() {
-    print_phase "6" "CÀI ĐẶT CLI TOOL"
+    print_phase "7" "CÀI ĐẶT CLI TOOL"
 
     if [ -f "$INSTALL_DIR/scripts/ztctl" ]; then
         cp "$INSTALL_DIR/scripts/ztctl" /usr/local/bin/ztctl
@@ -476,10 +581,10 @@ EOF
 }
 
 # ==============================================================================
-# PHASE 7: CONFIGURE FIREWALL
+# PHASE 8: CONFIGURE FIREWALL
 # ==============================================================================
 configure_firewall() {
-    print_phase "7" "CẤU HÌNH FIREWALL"
+    print_phase "8" "CẤU HÌNH FIREWALL"
 
     if command -v ufw &> /dev/null; then
         log "Cấu hình UFW..."
@@ -497,10 +602,10 @@ configure_firewall() {
 }
 
 # ==============================================================================
-# PHASE 8: SUMMARY
+# PHASE 9: SUMMARY
 # ==============================================================================
 show_summary() {
-    print_phase "8" "HOÀN TẤT"
+    print_phase "9" "HOÀN TẤT"
 
     WG_PUBLIC_KEY=$(cat /etc/wireguard/public.key 2>/dev/null)
     ADMIN_SECRET=$(grep ADMIN_SECRET "$INSTALL_DIR/control-plane/.env" | cut -d= -f2)
@@ -532,9 +637,12 @@ show_summary() {
     echo -e "${GREEN}║${NC}"
     echo -e "${GREEN}║${NC}  ${BOLD}📋 QUẢN LÝ SERVICES:${NC}"
     echo -e "${GREEN}║${NC}  ├─ systemctl status zero-trust-control-plane"
+    echo -e "${GREEN}║${NC}  ├─ systemctl status hub-agent"
     echo -e "${GREEN}║${NC}  ├─ systemctl restart zero-trust-control-plane"
+    echo -e "${GREEN}║${NC}  ├─ systemctl restart hub-agent"
     echo -e "${GREEN}║${NC}  ├─ systemctl status wg-quick@wg0"
-    echo -e "${GREEN}║${NC}  └─ journalctl -u zero-trust-control-plane -f"
+    echo -e "${GREEN}║${NC}  ├─ journalctl -u zero-trust-control-plane -f"
+    echo -e "${GREEN}║${NC}  └─ journalctl -u hub-agent -f"
     echo -e "${GREEN}║${NC}"
     echo -e "${GREEN}║${NC}  ${BOLD}🛠 CLI COMMANDS:${NC}"
     echo -e "${GREEN}║${NC}  ├─ ztctl status              # Xem trạng thái cluster"
@@ -581,6 +689,7 @@ main() {
     setup_wireguard
     install_control_plane
     create_systemd_service
+    install_hub_agent
     install_cli
     configure_firewall
     show_summary

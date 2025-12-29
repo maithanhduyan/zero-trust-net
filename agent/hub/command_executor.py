@@ -51,6 +51,7 @@ class CommandExecutor:
             "remove_peer": self._handle_remove_peer,
             "update_peer": self._handle_update_peer,
             "sync_peers": self._handle_sync_peers,
+            "get_peers": self._handle_get_peers,
             "get_status": self._handle_get_status,
             "get_peer_stats": self._handle_get_peer_stats,
             "restart_interface": self._handle_restart_interface,
@@ -197,6 +198,11 @@ class CommandExecutor:
     async def _handle_get_status(self, payload: dict) -> dict:
         """Get current interface status"""
         return await self.interface_status.get_full_status()
+
+    async def _handle_get_peers(self, payload: dict) -> dict:
+        """Get list of all current WireGuard peers"""
+        peers = await self.peer_stats.get_all_stats()
+        return {"peers": peers.get("peers", [])}
 
     async def _handle_get_peer_stats(self, payload: dict) -> dict:
         """Get peer statistics (handshakes, transfer)"""

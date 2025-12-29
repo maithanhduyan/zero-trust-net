@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
-from api.v1 import agent, admin, endpoints, client, websocket, user_policy
+from api.v1 import agent, admin, endpoints, client, websocket, user_policy, hub_websocket
 from database.session import init_db, db_manager
 from config import settings
 from schemas.base import HealthResponse, ErrorResponse
@@ -50,6 +50,10 @@ async def lifespan(app: FastAPI):
     # Register WebSocket-specific handlers
     from api.v1.websocket import register_websocket_handlers
     register_websocket_handlers()
+
+    # Register Hub WebSocket handlers
+    from api.v1.hub_websocket import register_hub_event_handlers
+    register_hub_event_handlers()
 
     startup_time = datetime.utcnow()
 
@@ -184,6 +188,13 @@ app.include_router(
     user_policy.router,
     prefix="/api/v1/access",
     tags=["User Access Policies"]
+)
+
+# Hub Agent WebSocket API
+app.include_router(
+    hub_websocket.router,
+    prefix="/api/v1",
+    tags=["Hub Agent"]
 )
 
 

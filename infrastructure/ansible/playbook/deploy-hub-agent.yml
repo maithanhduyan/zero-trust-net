@@ -1,0 +1,218 @@
+---
+# infrastructure/ansible/playbook/deploy-hub-agent.yml
+# Deploy Hub Agent - Native daemon that manages WireGuard on Hub server
+# Hub Agent receives commands from Control Plane via WebSocket
+
+- name: Deploy Zero Trust Hub Agent
+  hosts: hub
+  become: true
+
+  vars:
+    # Hub Agent Configuration
+    hub_agent_dir: /opt/hub-agent
+    hub_agent_user: root
+    hub_agent_group: root
+
+    # Control Plane connection
+    control_plane_host: "localhost"
+    control_plane_port: 8000
+    control_plane_url: "ws://{{ control_plane_host }}:{{ control_plane_port }}/api/v1/ws/hub"
+
+    # WireGuard settings
+    wireguard_interface: wg0
+    wireguard_config_dir: /etc/wireguard
+
+    # Agent settings
+    status_report_interval: 30
+    log_level: INFO
+
+    # Python
+    python_version: python3
+
+  tasks:
+    # ============================================
+    # PREREQUISITES
+    # ============================================
+    - name: Install required system packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+          - wireguard-tools
+          - iptables
+        state: present
+        update_cache: yes
+
+    - name: Verify WireGuard tools are installed
+      command: which wg
+      register: wg_check
+      changed_when: false
+      failed_when: wg_check.rc != 0
+
+    - name: Verify iptables is available
+      command: which iptables
+      register: iptables_check
+      changed_when: false
+      failed_when: iptables_check.rc != 0
+
+    # ============================================
+    # HUB AGENT INSTALLATION
+    # ============================================
+    - name: Create Hub Agent directory
+      file:
+        path: "{{ hub_agent_dir }}"
+        state: directory
+        owner: "{{ hub_agent_user }}"
+        group: "{{ hub_agent_group }}"
+        mode: '0755'
+
+    - name: Create Hub Agent subdirectories
+      file:
+        path: "{{ hub_agent_dir }}/{{ item }}"
+        state: directory
+        owner: "{{ hub_agent_user }}"
+        group: "{{ hub_agent_group }}"
+        mode: '0755'
+      loop:
+        - wireguard
+        - firewall
+        - status
+        - logs
+
+    - name: Copy Hub Agent source code
+      copy:
+        src: "{{ playbook_dir }}/../../../agent/hub/"
+        dest: "{{ hub_agent_dir }}/"
+        owner: "{{ hub_agent_user }}"
+        group: "{{ hub_agent_group }}"
+        mode: preserve
+      notify: Restart Hub Agent
+
+    - name: Create Python virtual environment
+      command: "{{ python_version }} -m venv {{ hub_agent_dir }}/venv"
+      args:
+        creates: "{{ hub_agent_dir }}/venv"
+
+    - name: Install Python dependencies
+      pip:
+        name:
+          - websockets>=12.0
+          - asyncio
+        virtualenv: "{{ hub_agent_dir }}/venv"
+        state: present
+
+    # ============================================
+    # CONFIGURATION
+    # ============================================
+    - name: Generate Hub Agent API key
+      shell: |
+        if [ ! -f {{ hub_agent_dir }}/api_key ]; then
+          openssl rand -hex 32 > {{ hub_agent_dir }}/api_key
+          chmod 600 {{ hub_agent_dir }}/api_key
+        fi
+        cat {{ hub_agent_dir }}/api_key
+      register: hub_agent_api_key
+      changed_when: false
+
+    - name: Create Hub Agent configuration file
+      template:
+        src: templates/hub-agent.conf.j2
+        dest: "{{ hub_agent_dir }}/config.env"
+        owner: "{{ hub_agent_user }}"
+        group: "{{ hub_agent_group }}"
+        mode: '0600'
+      notify: Restart Hub Agent
+
+    - name: Display Hub Agent API key
+      debug:
+        msg: |
+          Hub Agent API Key: {{ hub_agent_api_key.stdout }}
+
+          Register this key in Control Plane:
+          curl -X POST http://{{ control_plane_host }}:{{ control_plane_port }}/api/v1/hub/register \
+            -H "Content-Type: application/json" \
+            -d '{"api_key": "{{ hub_agent_api_key.stdout }}"}'
+
+    # ============================================
+    # SYSTEMD SERVICE
+    # ============================================
+    - name: Create Hub Agent systemd service
+      template:
+        src: templates/hub-agent.service.j2
+        dest: /etc/systemd/system/hub-agent.service
+        mode: '0644'
+      notify:
+        - Reload systemd
+        - Restart Hub Agent
+
+    - name: Enable Hub Agent service
+      systemd:
+        name: hub-agent
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Start Hub Agent service
+      systemd:
+        name: hub-agent
+        state: started
+
+    # ============================================
+    # LOGROTATE
+    # ============================================
+    - name: Configure logrotate for Hub Agent
+      copy:
+        dest: /etc/logrotate.d/hub-agent
+        content: |
+          /var/log/hub-agent.log {
+              daily
+              missingok
+              rotate 7
+              compress
+              delaycompress
+              notifempty
+              create 0640 {{ hub_agent_user }} {{ hub_agent_group }}
+              postrotate
+                  systemctl reload hub-agent > /dev/null 2>&1 || true
+              endscript
+          }
+        mode: '0644'
+
+    # ============================================
+    # VERIFICATION
+    # ============================================
+    - name: Wait for Hub Agent to start
+      wait_for:
+        timeout: 5
+
+    - name: Check Hub Agent service status
+      systemd:
+        name: hub-agent
+      register: hub_agent_status
+
+    - name: Display Hub Agent status
+      debug:
+        msg: |
+          Hub Agent Status: {{ hub_agent_status.status.ActiveState }}
+          PID: {{ hub_agent_status.status.MainPID | default('N/A') }}
+
+          Useful commands:
+          - View logs: journalctl -u hub-agent -f
+          - Check status: systemctl status hub-agent
+          - Restart: systemctl restart hub-agent
+
+    - name: Verify Hub Agent is running
+      command: systemctl is-active hub-agent
+      register: hub_agent_active
+      changed_when: false
+      failed_when: hub_agent_active.rc != 0
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart Hub Agent
+      systemd:
+        name: hub-agent
+        state: restarted
