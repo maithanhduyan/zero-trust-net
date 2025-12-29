@@ -26,6 +26,7 @@ from schemas.base import BaseResponse, ErrorResponse
 from core.node_manager import node_manager
 from core.policy_engine import policy_engine
 from core.ipam import ipam_service
+from core.agent_integrity import integrity_service
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -339,6 +340,189 @@ async def revoke_node(
                 "error_code": "NODE_NOT_FOUND"
             }
         )
+
+
+# === Agent Integrity Management ===
+
+@router.get(
+    "/nodes/{node_id}/integrity",
+    response_model=BaseResponse,
+    responses={
+        200: {"description": "Integrity status retrieved"},
+        404: {"description": "Node not found", "model": ErrorResponse},
+    },
+    summary="Get node integrity status",
+    description="Get agent integrity verification status for a node"
+)
+async def get_node_integrity(
+    node_id: int,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_token)
+):
+    """Get integrity status for a node"""
+    node = node_manager.get_node_by_id(db, node_id)
+
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": f"Node with id {node_id} not found",
+                "error_code": "NODE_NOT_FOUND"
+            }
+        )
+
+    return BaseResponse(
+        success=True,
+        message=f"Integrity status for {node.hostname}",
+        data={
+            "node_id": node.id,
+            "hostname": node.hostname,
+            "expected_hash": node.agent_hash,
+            "last_reported_hash": node.last_reported_hash,
+            "hash_verified": node.hash_verified,
+            "hash_mismatch_count": node.hash_mismatch_count,
+            "status": "verified" if node.hash_verified else (
+                "pending" if not node.agent_hash else "mismatch"
+            )
+        }
+    )
+
+
+@router.post(
+    "/nodes/{node_id}/integrity/approve",
+    response_model=BaseResponse,
+    responses={
+        200: {"description": "Agent hash approved"},
+        404: {"description": "Node not found", "model": ErrorResponse},
+        400: {"description": "No hash to approve", "model": ErrorResponse},
+    },
+    summary="Approve agent hash",
+    description="Approve the current reported agent hash as the expected hash for this node"
+)
+async def approve_agent_hash(
+    node_id: int,
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_token)
+):
+    """Approve agent's reported hash as the expected hash"""
+    node = node_manager.get_node_by_id(db, node_id)
+
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": f"Node with id {node_id} not found",
+                "error_code": "NODE_NOT_FOUND"
+            }
+        )
+
+    if not node.last_reported_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "No hash reported by agent yet. Wait for agent heartbeat.",
+                "error_code": "NO_HASH_REPORTED"
+            }
+        )
+
+    success = integrity_service.approve_reported_hash(db, node)
+
+    if success:
+        logger.info(f"Admin approved agent hash for {node.hostname}")
+        return BaseResponse(
+            success=True,
+            message=f"Agent hash approved for {node.hostname}",
+            data={
+                "node_id": node.id,
+                "hostname": node.hostname,
+                "approved_hash": node.agent_hash[:32] + "..." if node.agent_hash else None
+            }
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "Failed to approve hash",
+                "error_code": "APPROVAL_FAILED"
+            }
+        )
+
+
+@router.put(
+    "/nodes/{node_id}/integrity/hash",
+    response_model=BaseResponse,
+    responses={
+        200: {"description": "Expected hash set"},
+        404: {"description": "Node not found", "model": ErrorResponse},
+    },
+    summary="Set expected agent hash",
+    description="Manually set the expected agent hash for a node"
+)
+async def set_agent_hash(
+    node_id: int,
+    hash_value: str = Query(..., min_length=64, max_length=64, description="SHA-256 hash (64 hex chars)"),
+    db: Session = Depends(get_db),
+    _: bool = Depends(verify_admin_token)
+):
+    """Set expected agent hash manually"""
+    node = node_manager.get_node_by_id(db, node_id)
+
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": f"Node with id {node_id} not found",
+                "error_code": "NODE_NOT_FOUND"
+            }
+        )
+
+    node.agent_hash = hash_value
+    node.hash_mismatch_count = 0
+
+    # Check if it matches the last reported hash
+    if node.last_reported_hash == hash_value:
+        node.hash_verified = True
+    else:
+        node.hash_verified = False
+
+    db.commit()
+
+    logger.info(f"Admin set agent hash for {node.hostname}: {hash_value[:16]}...")
+
+    return BaseResponse(
+        success=True,
+        message=f"Expected hash set for {node.hostname}",
+        data={
+            "node_id": node.id,
+            "hostname": node.hostname,
+            "expected_hash": hash_value,
+            "hash_verified": node.hash_verified
+        }
+    )
+
+
+@router.post(
+    "/integrity/global-hash",
+    response_model=BaseResponse,
+    summary="Set global expected agent hash",
+    description="Set a global expected hash for all agents (used when node-specific hash not set)"
+)
+async def set_global_hash(
+    hash_value: str = Query(..., min_length=64, max_length=64, description="SHA-256 hash (64 hex chars)"),
+    _: bool = Depends(verify_admin_token)
+):
+    """Set global expected agent hash"""
+    integrity_service.set_global_expected_hash(hash_value)
+
+    logger.info(f"Admin set global agent hash: {hash_value[:16]}...")
+
+    return BaseResponse(
+        success=True,
+        message="Global agent hash set successfully",
+        data={
+            "global_hash": hash_value
+        }
+    )
 
 
 @router.delete(

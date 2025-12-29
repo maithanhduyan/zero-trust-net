@@ -22,6 +22,16 @@
             }
         },
         {
+            "label": "Kill Port 51820",
+            "type": "shell",
+            "command": "fuser -k 51820/udp 2>/dev/null || echo 'Port 51820 is free'",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
             "label": "Kill All Dev Ports",
             "type": "shell",
             "command": "fuser -k 3000/tcp 2>/dev/null; fuser -k 8000/tcp 2>/dev/null; echo '✓ Ports 3000, 8000 cleared'",

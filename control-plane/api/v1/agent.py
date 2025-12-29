@@ -30,6 +30,7 @@ from core.node_manager import node_manager
 from core.policy_engine import policy_engine
 from core.ipam import ipam_service
 from core.trust_engine import trust_engine
+from core.agent_integrity import integrity_service
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -335,13 +336,41 @@ async def heartbeat(
         heartbeat_in.agent_version
     )
 
+    # Verify agent integrity if hash is provided
+    integrity_verified = True
+    integrity_action = "not_reported"
+
+    if heartbeat_in.agent_hash:
+        integrity_verified, integrity_action = integrity_service.verify_integrity(
+            db=db,
+            node=node,
+            reported_hash=heartbeat_in.agent_hash,
+            file_hashes=heartbeat_in.agent_file_hashes
+        )
+
+        if not integrity_verified and integrity_action in ("suspended", "revoked"):
+            # Node has been suspended/revoked due to integrity failure
+            logger.critical(
+                f"Node {node.hostname} {integrity_action} due to integrity mismatch"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": f"Agent integrity verification failed. Node {integrity_action}.",
+                    "error_code": "INTEGRITY_FAILED",
+                    "action": integrity_action
+                }
+            )
+
     # Build metrics for trust calculation
     metrics = {
         "cpu_percent": heartbeat_in.cpu_percent or 0,
         "memory_percent": heartbeat_in.memory_percent or 0,
         "disk_percent": heartbeat_in.disk_percent or 0,
         "security_events": heartbeat_in.security_events or {},
-        "network_stats": heartbeat_in.network_stats or {}
+        "network_stats": heartbeat_in.network_stats or {},
+        "integrity_verified": integrity_verified,
+        "integrity_action": integrity_action
     }
 
     # Calculate and update trust score

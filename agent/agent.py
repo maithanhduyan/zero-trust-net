@@ -225,7 +225,7 @@ class ZeroTrustAgent:
         self.firewall.apply_rules(acl_rules)
 
     def send_heartbeat(self) -> bool:
-        """Send heartbeat to Control Plane with security metrics"""
+        """Send heartbeat to Control Plane with security metrics and integrity hash"""
         try:
             # Collect resource usage
             cpu_percent, memory_percent, disk_percent = self._collect_resource_usage()
@@ -239,6 +239,12 @@ class ZeroTrustAgent:
             # Calculate uptime
             uptime_seconds = self._get_uptime()
 
+            # Collect agent integrity hash
+            from collectors.agent_integrity import get_integrity_report
+            integrity_report = get_integrity_report()
+            agent_hash = integrity_report.get('combined_hash')
+            agent_file_hashes = integrity_report.get('file_hashes')
+
             response = self.client.heartbeat(
                 hostname=self.hostname,
                 public_key=self.public_key,
@@ -248,7 +254,9 @@ class ZeroTrustAgent:
                 memory_percent=memory_percent,
                 disk_percent=disk_percent,
                 security_events=security_events,
-                network_stats=network_stats
+                network_stats=network_stats,
+                agent_hash=agent_hash,
+                agent_file_hashes=agent_file_hashes
             )
 
             # Track trust score

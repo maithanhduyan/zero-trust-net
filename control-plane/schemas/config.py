@@ -139,6 +139,16 @@ class HeartbeatRequest(BaseModel):
     memory_percent: Optional[float] = None
     disk_percent: Optional[float] = None
 
+    # Agent integrity verification
+    agent_hash: Optional[str] = Field(
+        None,
+        description="Combined SHA-256 hash of agent files for integrity verification"
+    )
+    agent_file_hashes: Optional[dict] = Field(
+        None,
+        description="Per-file hashes for detailed integrity check"
+    )
+
     # Security and network metrics for trust calculation
     security_events: Optional[dict] = Field(
         None,

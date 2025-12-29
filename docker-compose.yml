@@ -66,23 +66,35 @@ services:
       options:
         max-size: "100m"
         max-file: "3"
-
     restart: unless-stopped
     networks:
       - zt-net
 
-  caddy:
-    image: caddy:2.8
-    container_name: caddy
-    ports:
-      - "80:80"
-      - "443:443"
+  wireguard:
+    image: linuxserver/wireguard:latest
+    container_name: wireguard
+    env_file:
+      - .env
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - SERVERURL=${SERVERURL:-"your.domain.com"} # replace with your domain or public IP
+      - SERVERPORT=51820
+      - PEERS=10
+      - PEERDNS=1.1.1.1,8.8.8.8
+      - ALLOWEDIPS=0.0.0.0/0
+      - LOG_CONFS=true
     volumes:
-      - ./infrastructure/docker/Caddyfile:/etc/caddy/Caddyfile
-      - ./caddy/data:/data
-      - ./caddy/config:/config
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - ./wireguard/config:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - 51820:51820/udp
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
     restart: unless-stopped
     networks:
       - zt-net

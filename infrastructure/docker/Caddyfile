@@ -1,5 +1,0 @@
-# Cấu hình Site
-control-plane.mastervip.com {
-    #
-    reverse_proxy host.docker.internal:8000
-}

@@ -69,7 +69,7 @@ class TrustEngine:
         Args:
             node: Node object
             metrics: Dict containing cpu_percent, memory_percent, disk_percent,
-                     security_events, network_stats, etc.
+                     security_events, network_stats, integrity_verified, etc.
 
         Returns:
             Tuple of (trust_score, factor_breakdown)
@@ -100,6 +100,18 @@ class TrustEngine:
             (security_score * self.WEIGHT_SECURITY)
         )
 
+        # 5. Integrity Penalty (applied after base calculation)
+        integrity_penalty = self._calculate_integrity_penalty(node, metrics)
+        if integrity_penalty > 0:
+            factors['integrity_penalty'] = integrity_penalty
+            factors['integrity_verified'] = False
+            trust_score -= integrity_penalty
+            logger.warning(
+                f"Integrity penalty applied to {node.hostname}: -{integrity_penalty:.2f}"
+            )
+        else:
+            factors['integrity_verified'] = metrics.get('integrity_verified', True)
+
         # Clamp to 0-1 range
         trust_score = max(0.0, min(1.0, trust_score))
         factors['total_score'] = trust_score
@@ -107,6 +119,11 @@ class TrustEngine:
         # Determine risk level
         factors['risk_level'] = self._get_risk_level(metrics)
         factors['risk_factors'] = self._get_risk_factors(metrics)
+
+        # Add integrity to risk factors if not verified
+        if not factors.get('integrity_verified', True):
+            if 'integrity_mismatch' not in factors.get('risk_factors', []):
+                factors['risk_factors'] = factors.get('risk_factors', []) + ['integrity_mismatch']
 
         return trust_score, factors
 
@@ -153,6 +170,40 @@ class TrustEngine:
             penalties.append('disk_high')
 
         return max(0.0, score)
+
+    def _calculate_integrity_penalty(self, node: Node, metrics: Dict[str, Any]) -> float:
+        """
+        Calculate trust penalty for integrity verification failures
+
+        This is a critical security check - if agent code has been tampered with,
+        we cannot trust any data from that agent.
+        """
+        # Check if integrity was verified in this heartbeat
+        integrity_verified = metrics.get('integrity_verified', True)
+        integrity_action = metrics.get('integrity_action', 'verified')
+
+        if integrity_verified and integrity_action in ('verified', 'not_reported', 'no_expected_hash'):
+            return 0.0
+
+        # Get mismatch count from node
+        mismatch_count = getattr(node, 'hash_mismatch_count', 0)
+
+        # Progressive penalty based on mismatch count
+        # First mismatch: 20% penalty
+        # Second mismatch: 40% penalty
+        # Third+ mismatch: 60% penalty (max before suspension)
+        if mismatch_count >= 3:
+            return 0.6
+        elif mismatch_count == 2:
+            return 0.4
+        elif mismatch_count == 1:
+            return 0.2
+
+        # Integrity action indicates failure
+        if integrity_action == 'mismatch_warning':
+            return 0.2
+
+        return 0.0
 
     def _calculate_behavior_score(self, node: Node, metrics: Dict[str, Any]) -> float:
         """

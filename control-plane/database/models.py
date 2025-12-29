@@ -89,6 +89,16 @@ class Node(Base):
     agent_version = Column(String(20), nullable=True)
     os_info = Column(String(100), nullable=True)
 
+    # Agent Integrity Verification
+    agent_hash = Column(String(64), nullable=True,
+                        comment="Expected SHA-256 hash of agent files (set by admin)")
+    last_reported_hash = Column(String(64), nullable=True,
+                                comment="Last hash reported by agent in heartbeat")
+    hash_verified = Column(Boolean, default=False, nullable=False,
+                           comment="Whether agent hash matches expected")
+    hash_mismatch_count = Column(Integer, default=0, nullable=False,
+                                 comment="Consecutive hash mismatches (0 = verified)")
+
     # Trust Score (Dynamic Trust Algorithm)
     trust_score = Column(Float, default=1.0, nullable=False,
                          comment="Trust score 0.0-1.0, lower = less trusted")

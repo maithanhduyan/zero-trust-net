@@ -167,10 +167,12 @@ class ControlPlaneClient:
         memory_percent: Optional[float] = None,
         disk_percent: Optional[float] = None,
         security_events: Optional[Dict[str, Any]] = None,
-        network_stats: Optional[Dict[str, Any]] = None
+        network_stats: Optional[Dict[str, Any]] = None,
+        agent_hash: Optional[str] = None,
+        agent_file_hashes: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
-        Send heartbeat to Control Plane with security metrics
+        Send heartbeat to Control Plane with security metrics and integrity hash
 
         Returns:
             Heartbeat response with config_changed flag and trust_score
@@ -194,6 +196,10 @@ class ControlPlaneClient:
             data["security_events"] = security_events
         if network_stats is not None:
             data["network_stats"] = network_stats
+        if agent_hash is not None:
+            data["agent_hash"] = agent_hash
+        if agent_file_hashes is not None:
+            data["agent_file_hashes"] = agent_file_hashes
 
         return self._make_request("POST", "/heartbeat", data)
 

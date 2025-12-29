@@ -472,7 +472,7 @@ main() {
     reset_firewall
     reset_ssh
     reset_kernel
-    remove_project_dirs
+    # remove_project_dirs
     remove_user_groups
     cleanup_packages
 

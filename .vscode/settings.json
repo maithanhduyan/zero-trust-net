@@ -10,9 +10,13 @@
     "[jsonc]": {
         "editor.defaultFormatter": "vscode.json-language-features"
     },
+    // Python Settings
     "[python]": {
-        "editor.defaultFormatter": "ms-python.python"
+        "editor.defaultFormatter": "ms-python.python",
     },
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.envFile": "${workspaceFolder}/.env",
+    // Remote Development Settings
     "remote.autoForwardPorts": true,
-    "chat.agent.maxRequests": 100
+    "chat.agent.maxRequests": 100,
 }
