@@ -42,7 +42,7 @@
             }
         },
         {
-            "label": "Stop Control Plane Service",
+            "label": "Stop Control Plane Service (Native)",
             "type": "shell",
             "command": "sudo systemctl stop zero-trust-control-plane 2>/dev/null || true; echo '✓ Service stopped'",
             "problemMatcher": [],
@@ -52,7 +52,17 @@
             }
         },
         {
-            "label": "Start Control Plane (Native)",
+            "label": "Start Control Plane Service (Native)",
+            "type": "shell",
+            "command": "sudo systemctl start zero-trust-control-plane 2>/dev/null || true; echo '✓ Service started'",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Start Control Plane (Dev)",
             "type": "shell",
             "command": "cd ${workspaceFolder}/control-plane && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
             "problemMatcher": [],
