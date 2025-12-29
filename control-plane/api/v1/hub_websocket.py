@@ -459,3 +459,37 @@ async def get_hub_peers():
         return {"success": True, "data": result.get("data", {})}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@router.post("/hub/add-peer")
+async def add_hub_peer(
+    public_key: str,
+    allowed_ips: str,
+    persistent_keepalive: int = 25
+):
+    """Add a WireGuard peer via Hub Agent"""
+    if not hub_ws_manager.is_connected:
+        return {"success": False, "error": "Hub Agent not connected"}
+
+    try:
+        result = await hub_ws_manager.add_peer(
+            public_key=public_key,
+            allowed_ips=allowed_ips,
+            persistent_keepalive=persistent_keepalive
+        )
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.delete("/hub/remove-peer/{public_key:path}")
+async def remove_hub_peer(public_key: str):
+    """Remove a WireGuard peer via Hub Agent"""
+    if not hub_ws_manager.is_connected:
+        return {"success": False, "error": "Hub Agent not connected"}
+
+    try:
+        result = await hub_ws_manager.remove_peer(public_key=public_key)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
